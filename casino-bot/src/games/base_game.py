@@ -193,25 +193,9 @@ class BaseGame(ABC):
         """
         Handle unexpected errors during gameplay.
 
-        Takes a screenshot for debugging, logs the error, and pauses briefly
-        before retrying.
+        Logs the error and pauses briefly before retrying.
         """
         logger.error(f"Error during {context}: {error}")
-
-        # Save an error screenshot for debugging
-        try:
-            from src.screen import take_screenshot
-            import cv2
-
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            error_dir = self._resolve_path("errors")
-            error_dir.mkdir(exist_ok=True)
-            screenshot = take_screenshot()
-            error_path = str(error_dir / f"error_{timestamp}.png")
-            cv2.imwrite(error_path, screenshot)
-            logger.info(f"Error screenshot saved: {error_path}")
-        except Exception as e:
-            logger.error(f"Failed to save error screenshot: {e}")
 
         # Pause before retrying
         time.sleep(5)
