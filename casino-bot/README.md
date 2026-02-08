@@ -22,7 +22,7 @@ brew install tesseract
 
 ```bash
 cd casino-bot
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 ### Grant macOS Permissions
@@ -70,6 +70,27 @@ python3 main.py --config config/games/my_slot_dk.yaml --duration 90
 
 Press `Ctrl+C` to gracefully stop after the current action completes.
 
+## New Computer Setup
+
+Assets (screenshots) and game configs contain screen coordinates and pixel data that are specific to each machine's display resolution. When moving to a new computer:
+
+```bash
+# 1. Install dependencies
+brew install tesseract
+pip3 install -r requirements.txt
+
+# 2. Grant macOS permissions (Accessibility + Screen Recording)
+
+# 3. Re-capture assets for each game you want to run
+python3 tools/capture.py --game crazy_time_dk --type crazy_time
+```
+
+To reset and re-capture an existing game (e.g. if the UI changed):
+
+```bash
+python3 tools/capture.py --game crazy_time_dk --reset --type crazy_time
+```
+
 ## Weekly Update Workflow
 
 When a new leaderboard game drops:
@@ -93,8 +114,8 @@ Set `spin_mode` in the game's YAML config.
 
 ```
 casino-bot/
-├── config/games/         # YAML game definitions
-├── assets/               # Screenshot snippets of UI elements per game
+├── config/games/         # YAML game definitions (machine-specific, not committed)
+├── assets/               # Screenshot snippets of UI elements per game (not committed)
 ├── src/
 │   ├── screen.py         # Screenshot, image matching, OCR
 │   ├── actions.py        # Click, jitter, delay wrappers

@@ -27,3 +27,9 @@ logs/*.csv
 logs/*.log
 errors/*.png
 errors/*.jpg
+
+# Captured assets and game configs are machine-specific (screen resolution, positions)
+assets/*
+!assets/.gitkeep
+config/games/*
+!config/games/slot_template.yaml
