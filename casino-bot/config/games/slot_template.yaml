@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────
+# Slot Game Template
+# ─────────────────────────────────────────────────────────────
+# Copy this file for each new weekly slot game.
+# Leaderboard: Money Multiplier (win-to-wager ratio)
+#
+# Quick setup for a new slot:
+#   1. cp config/games/slot_template.yaml config/games/MY_SLOT.yaml
+#   2. Open the slot in Chrome
+#   3. Run: python3 tools/capture.py --game MY_SLOT --type slot
+#   4. Update this file with the correct element filenames and regions
+#   5. Test: python3 tools/capture.py --game MY_SLOT --test
+#   6. Run: python3 main.py --config config/games/MY_SLOT.yaml --duration 60
+#
+# Or let the capture tool generate the YAML for you:
+#   python3 tools/capture.py --game MY_SLOT --type slot
+# ─────────────────────────────────────────────────────────────
+
+game:
+  name: "Slot Name - Platform"            # e.g. "Starburst - DraftKings"
+  type: slot
+  platform: draftkings                    # "draftkings" or "fanduel"
+  asset_dir: "assets/MY_SLOT/"            # Path to captured screenshots
+
+# Spin mode: "manual" or "autoplay"
+# - manual: bot clicks spin every time (works everywhere)
+# - autoplay: bot uses the game's autoplay feature (when available)
+spin_mode: manual
+
+# UI element template images
+# Only include elements that this specific slot has.
+# The capture tool (tools/capture.py) saves these as PNGs.
+elements:
+  # Required
+  spin_button: "spin_button.png"          # The main spin/play button
+
+  # Bet controls (optional — needed if target_bet != default)
+  bet_up: "bet_up.png"                    # Bet increase button
+  bet_down: "bet_down.png"                # Bet decrease button
+
+  # Autoplay elements (only needed if spin_mode is "autoplay")
+  # autoplay_button: "autoplay_button.png"
+  # autoplay_confirm: "autoplay_confirm.png"
+  # autoplay_stop: "autoplay_stop.png"
+  # autoplay_active: "autoplay_active.png"
+
+  # Bonus detection — include ONLY the types this slot has
+  # The bot checks for these to detect bonus rounds
+  # bonus_free_spins: "free_spins.png"    # Free spins overlay/indicator
+  # bonus_pick: "pick_screen.png"         # Pick-and-click bonus screen
+  # bonus_wheel: "wheel.png"              # Wheel bonus screen
+
+  # Pick-and-click bonus elements (only if this slot has pick bonuses)
+  # pick_target: "pick_item.png"          # What clickable items look like
+  # pick_collect: "collect.png"           # "Collect" / end-of-bonus indicator
+
+# OCR regions — screen coordinates for reading text
+# Update these after running the capture tool
+regions:
+  balance:                                # Where the balance number appears
+    x: 50
+    y: 720
+    w: 150
+    h: 30
+  bet_amount:                             # Where the current bet is shown
+    x: 400
+    y: 720
+    w: 80
+    h: 30
+
+settings:
+  # Use minimum bet for Money Multiplier leaderboards
+  target_bet: 0.20                        # Desired bet per spin (set to game minimum)
+  confidence: 0.85                        # Template match threshold (lower = more lenient)
+  action_delay: [0.3, 0.8]               # Random delay between actions (seconds)
+  spin_wait: 3.0                          # Wait time after clicking spin (manual mode)
+  poll_interval: 2.0                      # Screen check interval (autoplay mode)
+  session_duration: 60                    # How long to play (minutes)
+
+# Autoplay settings (only used when spin_mode is "autoplay")
+autoplay:
+  num_spins: 100                          # Spins to request per autoplay activation
+  # loss_limit: 50.00                     # Optional: stop autoplay at this loss
+  # win_limit: 100.00                     # Optional: stop autoplay at this win
