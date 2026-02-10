@@ -3,14 +3,20 @@
 Asset capture tool for setting up new games.
 
 Usage:
-  # Capture assets for a new slot game
+  # Capture all assets for a new game
   python3 tools/capture.py --game my_slot_dk --type slot
-
-  # Capture assets for Crazy Time
   python3 tools/capture.py --game crazy_time_dk --type crazy_time
+  python3 tools/capture.py --game diamond_wild --type diamond_wild
+
+  # Re-capture (or add) a single asset without re-running full capture
+  python3 tools/capture.py --game diamond_wild --update-asset dismiss_popup
+  python3 tools/capture.py --game my_slot_dk --update-asset spin_button
 
   # Test if all assets for a game can be found on screen
-  python3 tools/capture.py --test my_slot_dk
+  python3 tools/capture.py --game my_slot_dk --test
+
+  # Reset and re-capture everything
+  python3 tools/capture.py --game my_slot_dk --reset --type slot
 
 How it works:
   1. Takes a screenshot of your current screen
@@ -67,6 +73,16 @@ CRAZY_TIME_ELEMENTS = [
 CRAZY_TIME_OPTIONAL_ELEMENTS = [
     ("bonus_cashhunt", "Cash Hunt bonus screen indicator"),
 ]
+
+DIAMOND_WILD_ELEMENTS = [
+    ("spin_button", "Spin button (the button to start a spin)", True),
+]
+
+DIAMOND_WILD_OPTIONAL_ELEMENTS = [
+    ("dismiss_popup", "Popup screen that needs clicking anywhere to dismiss"),
+]
+
+DIAMOND_WILD_REGIONS = []
 
 SLOT_REGIONS = [
     ("balance", "Balance display area (the number showing your balance)"),
@@ -166,6 +182,10 @@ def capture_elements(game_name: str, game_type: str) -> dict:
         required_elements = CRAZY_TIME_ELEMENTS
         optional_elements = CRAZY_TIME_OPTIONAL_ELEMENTS
         regions_list = CRAZY_TIME_REGIONS
+    elif game_type == "diamond_wild":
+        required_elements = DIAMOND_WILD_ELEMENTS
+        optional_elements = DIAMOND_WILD_OPTIONAL_ELEMENTS
+        regions_list = DIAMOND_WILD_REGIONS
     else:
         print(f"Unknown game type: {game_type}")
         sys.exit(1)
@@ -201,7 +221,31 @@ def capture_elements(game_name: str, game_type: str) -> dict:
         captured_elements[elem_name] = filename
         print(f"    Saved: {filepath}\n")
 
-    # ── Step 2: Bet position (Crazy Time only) ──
+    # ── Step 2: Optional elements ──
+    if optional_elements:
+        print(f"\n--- Optional Elements ({len(optional_elements)}) ---\n")
+        for elem_name, description in optional_elements:
+            answer = input(f"  [{elem_name}] {description}\n    Capture this? (y/n): ").strip().lower()
+            if answer != "y":
+                print("    Skipped.\n")
+                continue
+
+            result = capture_screenshot_region()
+            if result is None:
+                print("    Failed — try again")
+                result = capture_screenshot_region()
+            if result is None:
+                print("    Skipped.\n")
+                continue
+
+            img, region = result
+            filename = f"{elem_name}.png"
+            filepath = asset_dir / filename
+            cv2.imwrite(str(filepath), img)
+            captured_elements[elem_name] = filename
+            print(f"    Saved: {filepath}\n")
+
+    # ── Step 3: Bet position (Crazy Time only) ──
     if game_type == "crazy_time":
         print("\n--- Bet Position ---\n")
         pos = capture_position("Hover over the '1' bet area, press Enter")
@@ -226,6 +270,8 @@ def generate_yaml_config(game_name: str, game_type: str, captured: dict) -> str:
         config = _generate_slot_config(game_name, captured)
     elif game_type == "crazy_time":
         config = _generate_crazy_time_config(game_name, captured)
+    elif game_type == "diamond_wild":
+        config = _generate_diamond_wild_config(game_name, captured)
     else:
         config = {}
 
@@ -295,6 +341,78 @@ def _generate_crazy_time_config(game_name: str, captured: dict) -> dict:
     }
 
 
+def _generate_diamond_wild_config(game_name: str, captured: dict) -> dict:
+    """Generate Diamond Wild YAML config."""
+    return {
+        "game": {
+            "name": game_name.replace("_", " ").title(),
+            "type": "diamond_wild",
+            "platform": "draftkings",
+            "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
+        },
+        "elements": captured.get("elements", {}),
+        "regions": captured.get("regions", {}),
+        "settings": {
+            "confidence": 0.85,
+            "action_delay": [0.3, 0.8],
+            "spin_wait": 1.0,
+            "poll_interval": 1.0,
+            "session_duration": 60,
+        },
+    }
+
+
+def update_single_asset(game_name: str, element_name: str) -> None:
+    """Re-capture a single asset for an existing game."""
+    asset_dir = PROJECT_ROOT / "assets" / game_name
+    config_path = PROJECT_ROOT / "config" / "games" / f"{game_name}.yaml"
+
+    if not config_path.exists():
+        print(f"Config not found: {config_path}")
+        print(f"Run a full capture first: python3 tools/capture.py --game {game_name} --type <type>")
+        sys.exit(1)
+
+    asset_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'='*60}")
+    print(f"  Updating asset '{element_name}' for: {game_name}")
+    print(f"{'='*60}")
+    print()
+    print("  Make sure the game is open and visible in Chrome.")
+    print()
+
+    print(f"  [{element_name}] Select the region for this element")
+    result = capture_screenshot_region()
+    if result is None:
+        print("    Failed — try again")
+        result = capture_screenshot_region()
+    if result is None:
+        print("    Cancelled.\n")
+        sys.exit(1)
+
+    img, region = result
+    filename = f"{element_name}.png"
+    filepath = asset_dir / filename
+    cv2.imwrite(str(filepath), img)
+    print(f"    Saved: {filepath}")
+
+    # Update the YAML config to include this element if it's not already there
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    elements = config.get("elements", {})
+    if element_name not in elements:
+        elements[element_name] = filename
+        config["elements"] = elements
+        with open(config_path, "w") as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        print(f"    Added '{element_name}' to config: {config_path}")
+    else:
+        print(f"    '{element_name}' already in config (asset file updated)")
+
+    print(f"\n  Done! Test with: python3 tools/capture.py --game {game_name} --test\n")
+
+
 def test_assets(game_name: str) -> None:
     """Test if all captured assets can be found on the current screen."""
     asset_dir = PROJECT_ROOT / "assets" / game_name
@@ -358,7 +476,7 @@ def main():
     )
     parser.add_argument(
         "--type",
-        choices=["slot", "crazy_time"],
+        choices=["slot", "crazy_time", "diamond_wild"],
         help="Game type (slot or crazy_time)",
     )
     parser.add_argument(
@@ -371,12 +489,19 @@ def main():
         action="store_true",
         help="Delete all screenshots and config for a game, then re-capture",
     )
+    parser.add_argument(
+        "--update-asset",
+        metavar="ELEMENT",
+        help="Re-capture a single asset by name (e.g. --update-asset dismiss_popup)",
+    )
 
     args = parser.parse_args()
 
     init_retina_scale()
 
-    if args.reset:
+    if args.update_asset:
+        update_single_asset(args.game, args.update_asset)
+    elif args.reset:
         reset_game(args.game)
         if not args.type:
             print("  Add --type slot or --type crazy_time to re-capture now.")

@@ -44,19 +44,33 @@ python3 tools/capture.py --game my_slot_dk --type slot
 
 # For Crazy Time Live
 python3 tools/capture.py --game crazy_time_dk --type crazy_time
+
+# For Diamond Wild
+python3 tools/capture.py --game diamond_wild --type diamond_wild
 ```
 
 The tool walks you through screenshotting each UI element (spin button, bet controls, bonus indicators, etc.) and generates a starter YAML config.
 
-### 2. Test Assets
+### 2. Update a Single Asset
+
+Re-capture (or add) a single asset without re-running the full capture flow:
+
+```bash
+python3 tools/capture.py --game diamond_wild --update-asset dismiss_popup
+python3 tools/capture.py --game my_slot_dk --update-asset spin_button
+```
+
+This saves the new screenshot and adds the element to the YAML config if it's not already there.
+
+### 3. Test Assets
 
 Verify all captured assets can be found on the current screen:
 
 ```bash
-python3 tools/capture.py --test my_slot_dk
+python3 tools/capture.py --game my_slot_dk --test
 ```
 
-### 3. Run the Bot
+### 4. Run the Bot
 
 ```bash
 # Run for 60 minutes (default)
@@ -66,7 +80,7 @@ python3 main.py --config config/games/my_slot_dk.yaml
 python3 main.py --config config/games/my_slot_dk.yaml --duration 90
 ```
 
-### 4. Stop the Bot
+### 5. Stop the Bot
 
 Press `Ctrl+C` to gracefully stop after the current action completes.
 
@@ -122,7 +136,8 @@ casino-bot/
 │   └── games/
 │       ├── base_game.py  # Abstract base class
 │       ├── slots.py      # Generic slot runner
-│       └── crazy_time.py # Crazy Time Live runner
+│       ├── crazy_time.py # Crazy Time Live runner
+│       └── diamond_wild.py # Diamond Wild runner
 ├── tools/
 │   └── capture.py        # Asset capture CLI
 └── main.py               # Entry point
