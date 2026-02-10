@@ -1,0 +1,19 @@
+game:
+  name: Crazy Time Dk
+  type: crazy_time
+  platform: draftkings
+  asset_dir: assets/crazy_time_dk/
+elements:
+  betting_open: betting_open.png
+regions: {}
+bets:
+- segment: '1'
+  click_x: 279
+  click_y: 638
+settings:
+  confidence: 0.85
+  action_delay:
+  - 0.3
+  - 1.0
+  poll_interval: 2.0
+  session_duration: 60

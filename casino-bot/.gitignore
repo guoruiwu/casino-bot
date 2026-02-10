@@ -32,4 +32,4 @@ errors/*.jpg
 assets/*
 !assets/.gitkeep
 config/games/*
-!config/games/slot_template.yaml
+!config/games/*.yaml

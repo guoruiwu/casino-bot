@@ -1,0 +1,18 @@
+game:
+  name: Diamond Wild
+  type: diamond_wild
+  platform: draftkings
+  asset_dir: assets/diamond_wild/
+
+elements:
+  spin_button: spin_button.png
+  dismiss_popup: dismiss_popup.png
+
+regions: {}
+
+settings:
+  confidence: 0.85
+  action_delay: [0.3, 0.8]
+  spin_wait: 1.0
+  poll_interval: 1.0
+  session_duration: 60
