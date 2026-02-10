@@ -44,6 +44,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.screen import find_element, init_retina_scale, take_screenshot
 
+# ── Common optional elements (shared across all game types) ──────────────
+COMMON_OPTIONAL_ELEMENTS = [
+    ("reality_check", "Reality check popup button (the button to dismiss the popup)"),
+]
+
 # ── Element definitions per game type ────────────────────────────────────
 # Only the ESSENTIAL elements that must be image-matched.
 # Everything else (bet positions, regions) uses coordinates in the YAML.
@@ -221,10 +226,11 @@ def capture_elements(game_name: str, game_type: str) -> dict:
         captured_elements[elem_name] = filename
         print(f"    Saved: {filepath}\n")
 
-    # ── Step 2: Optional elements ──
-    if optional_elements:
-        print(f"\n--- Optional Elements ({len(optional_elements)}) ---\n")
-        for elem_name, description in optional_elements:
+    # ── Step 2: Optional elements (game-specific + common) ──
+    all_optional = list(optional_elements) + COMMON_OPTIONAL_ELEMENTS
+    if all_optional:
+        print(f"\n--- Optional Elements ({len(all_optional)}) ---\n")
+        for elem_name, description in all_optional:
             answer = input(f"  [{elem_name}] {description}\n    Capture this? (y/n): ").strip().lower()
             if answer != "y":
                 print("    Skipped.\n")
@@ -404,11 +410,19 @@ def update_single_asset(game_name: str, element_name: str) -> None:
     if element_name not in elements:
         elements[element_name] = filename
         config["elements"] = elements
-        with open(config_path, "w") as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-        print(f"    Added '{element_name}' to config: {config_path}")
-    else:
-        print(f"    '{element_name}' already in config (asset file updated)")
+
+    # For reality_check, also capture where to click to dismiss
+    if element_name == "reality_check":
+        print()
+        pos = capture_position("Hover over the BUTTON to dismiss the reality check, press Enter")
+        settings = config.get("settings", {})
+        settings["reality_check_click"] = {"x": pos[0], "y": pos[1]}
+        config["settings"] = settings
+        print(f"    Click position set to: ({pos[0]}, {pos[1]})")
+
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    print(f"    Config updated: {config_path}")
 
     print(f"\n  Done! Test with: python3 tools/capture.py --game {game_name} --test\n")
 

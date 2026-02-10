@@ -86,6 +86,33 @@ This saves the new screenshot and adds the element to the YAML config if it's no
 
 ---
 
+## Reality Check Popup (All Games)
+
+Platforms sometimes show a "reality check" popup that pauses gameplay. The bot can automatically dismiss this for any game.
+
+To set it up:
+
+```bash
+cd /Users/guoruiwu/Github/casino-bot
+
+# For Diamond Wild
+python3 tools/capture.py --game diamond_wild --update-asset reality_check
+
+# For Crazy Time
+python3 tools/capture.py --game crazy_time_dk --update-asset reality_check
+
+# For any slot
+python3 tools/capture.py --game GAME_NAME --update-asset reality_check
+```
+
+It will ask for 2 things:
+1. **Screenshot region**: select the corners of something that identifies the popup (e.g. the title or a unique part of the dialog)
+2. **Button position**: hover over the dismiss/continue button and press Enter
+
+The bot checks for this popup before every action. If it appears, it clicks the button and resumes playing.
+
+---
+
 ## Run the Bot
 
 ### Crazy Time
@@ -157,6 +184,7 @@ python3 tools/capture.py --game crazy_time_dk --reset
 | Set up a slot | `python3 tools/capture.py --game GAME_NAME --type slot` |
 | Set up Diamond Wild | `python3 tools/capture.py --game diamond_wild --type diamond_wild` |
 | Update one asset | `python3 tools/capture.py --game GAME_NAME --update-asset ELEMENT` |
+| Set up reality check | `python3 tools/capture.py --game GAME_NAME --update-asset reality_check` |
 | Run Crazy Time 60 min | `python3 main.py --config config/games/crazy_time_dk.yaml --duration 60` |
 | Run a slot 60 min | `python3 main.py --config config/games/GAME_NAME.yaml --duration 60` |
 | Run Diamond Wild 60 min | `python3 main.py --config config/games/diamond_wild.yaml --duration 60` |

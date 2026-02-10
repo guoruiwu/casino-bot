@@ -54,6 +54,9 @@ elements:
   # pick_target: "pick_item.png"          # What clickable items look like
   # pick_collect: "collect.png"           # "Collect" / end-of-bonus indicator
 
+  # Common — works on all game types (capture with: --update-asset reality_check)
+  # reality_check: "reality_check.png"    # Reality check popup dismiss button
+
 # OCR regions — screen coordinates for reading text
 # Update these after running the capture tool
 regions:
@@ -76,6 +79,9 @@ settings:
   spin_wait: 3.0                          # Wait time after clicking spin (manual mode)
   poll_interval: 2.0                      # Screen check interval (autoplay mode)
   session_duration: 60                    # How long to play (minutes)
+  # reality_check_click:                  # Where to click to dismiss (omit to click matched image)
+  #   x: 500
+  #   y: 400
 
 # Autoplay settings (only used when spin_mode is "autoplay")
 autoplay:

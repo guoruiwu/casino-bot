@@ -62,7 +62,21 @@ python3 tools/capture.py --game my_slot_dk --update-asset spin_button
 
 This saves the new screenshot and adds the element to the YAML config if it's not already there.
 
-### 3. Test Assets
+### 3. Reality Check Popup
+
+All games can handle the "reality check" popup that platforms show periodically. To set it up for any game:
+
+```bash
+python3 tools/capture.py --game diamond_wild --update-asset reality_check
+```
+
+This will ask you to:
+1. Screenshot a region that identifies the popup (used for detection)
+2. Hover over the **dismiss button** and press Enter (used for clicking)
+
+The bot checks for this popup every loop iteration, before normal game logic. If detected, it clicks the button and continues playing. Each game has its own screenshot and click position since the popup may look different across platforms.
+
+### 4. Test Assets
 
 Verify all captured assets can be found on the current screen:
 
@@ -70,7 +84,7 @@ Verify all captured assets can be found on the current screen:
 python3 tools/capture.py --game my_slot_dk --test
 ```
 
-### 4. Run the Bot
+### 5. Run the Bot
 
 ```bash
 # Run for 60 minutes (default)
@@ -80,7 +94,7 @@ python3 main.py --config config/games/my_slot_dk.yaml
 python3 main.py --config config/games/my_slot_dk.yaml --duration 90
 ```
 
-### 5. Stop the Bot
+### 6. Stop the Bot
 
 Press `Ctrl+C` to gracefully stop after the current action completes.
 

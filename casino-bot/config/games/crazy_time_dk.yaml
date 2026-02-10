@@ -5,6 +5,7 @@ game:
   asset_dir: assets/crazy_time_dk/
 elements:
   betting_open: betting_open.png
+  # reality_check: reality_check.png    # Capture with: --update-asset reality_check
 regions: {}
 bets:
 - segment: '1'
@@ -17,3 +18,6 @@ settings:
   - 1.0
   poll_interval: 2.0
   session_duration: 60
+  # reality_check_click:                  # Where to click to dismiss (omit to click matched image)
+  #   x: 500
+  #   y: 400

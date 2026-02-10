@@ -21,6 +21,9 @@ from typing import Any, Optional
 
 import yaml
 
+from src.actions import click_element, click_position
+from src.screen import find_element, take_screenshot
+
 logger = logging.getLogger(__name__)
 
 
@@ -189,6 +192,36 @@ class BaseGame(ABC):
 
         logger.info(status)
 
+    def _check_reality_check(self) -> bool:
+        """
+        Check for and dismiss the reality check popup.
+
+        This is a common popup across all games. Each game can configure its own
+        screenshot for the reality_check element in the YAML config under elements.
+
+        The click target can be set separately via reality_check_click in settings:
+            reality_check_click: {x: 500, y: 400}
+        If not set, clicks the matched template location.
+
+        Returns:
+            True if a reality check was detected and dismissed, False otherwise.
+        """
+        reality_check = self.elements.get("reality_check")
+        if reality_check is None:
+            return False
+
+        screenshot = take_screenshot()
+        if find_element(reality_check, self.confidence, screenshot=screenshot):
+            logger.info("Reality check popup detected — dismissing")
+            click_target = self.settings.get("reality_check_click")
+            if click_target:
+                click_position(click_target["x"], click_target["y"], jitter=True, delay_range=(0.5, 1.0))
+            else:
+                click_element(reality_check, self.confidence, jitter=True, delay_range=(0.5, 1.0))
+            return True
+
+        return False
+
     def on_error(self, error: Exception, context: str = "") -> None:
         """
         Handle unexpected errors during gameplay.
@@ -255,6 +288,10 @@ class BaseGame(ABC):
         try:
             while self.running and not self.session_expired:
                 try:
+                    # Check for reality check popup before normal game logic
+                    if self._check_reality_check():
+                        continue
+
                     state = self.detect_state()
                     self.step(state)
                 except KeyboardInterrupt:
