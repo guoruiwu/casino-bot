@@ -26,6 +26,7 @@ GAME_RUNNERS = {
     "slot": "src.games.slots.SlotsGame",
     "crazy_time": "src.games.crazy_time.CrazyTimeGame",
     "diamond_wild": "src.games.diamond_wild.DiamondWildGame",
+    "infinite_blackjack": "src.games.infinite_blackjack.InfiniteBlackjackGame",
 }
 
 

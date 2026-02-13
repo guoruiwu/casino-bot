@@ -3,10 +3,13 @@
 Asset capture tool for setting up new games.
 
 Usage:
-  # Capture all assets for a new game
+  # See what assets are needed for a game type
+  python3 tools/capture.py --help-game infinite_blackjack
+
+  # Capture all assets for a new game (type auto-detected from name)
+  python3 tools/capture.py --game infinite_blackjack_fd
+  python3 tools/capture.py --game crazy_time_dk
   python3 tools/capture.py --game my_slot_dk --type slot
-  python3 tools/capture.py --game crazy_time_dk --type crazy_time
-  python3 tools/capture.py --game diamond_wild --type diamond_wild
 
   # Re-capture (or add) a single asset without re-running full capture
   python3 tools/capture.py --game diamond_wild --update-asset dismiss_popup
@@ -16,7 +19,7 @@ Usage:
   python3 tools/capture.py --game my_slot_dk --test
 
   # Reset and re-capture everything
-  python3 tools/capture.py --game my_slot_dk --reset --type slot
+  python3 tools/capture.py --game my_slot_dk --reset
 
 How it works:
   1. Takes a screenshot of your current screen
@@ -97,6 +100,124 @@ SLOT_REGIONS = [
 CRAZY_TIME_REGIONS = [
     ("balance", "Balance display area"),
 ]
+
+INFINITE_BLACKJACK_ELEMENTS = [
+    ("betting_open", '"PLACE YOUR BETS" text (visible during betting phase)', True),
+    ("hit_button", "HIT button with + icon (visible during decision phase)", True),
+    ("stand_button", "STAND button with - icon (visible during decision phase)", True),
+    ("double_button", "DOUBLE button (visible during decision phase)", True),
+    ("chip_1", "$1 chip in the chip tray (visible during betting phase)", True),
+]
+
+INFINITE_BLACKJACK_OPTIONAL_ELEMENTS = [
+    ("repeat_button", "REPEAT button (appears after first bet is placed)"),
+]
+
+INFINITE_BLACKJACK_REGIONS = [
+    ("player_total", "Green circle showing player hand total (near player cards)"),
+    ("dealer_upcard", "Label showing dealer visible card value (near dealer card)"),
+    ("balance", "Balance amount display (bottom of screen)"),
+]
+
+INFINITE_BLACKJACK_POSITIONS = [
+    ("bet_spot", "Main betting area on the table (where to place chip)"),
+]
+
+# ── Game type registry ───────────────────────────────────────────────────
+# Maps game type to its element, optional element, region, and position lists.
+
+GAME_TYPE_DEFS = {
+    "slot": {
+        "elements": SLOT_ELEMENTS,
+        "optional_elements": SLOT_OPTIONAL_ELEMENTS,
+        "regions": SLOT_REGIONS,
+        "positions": [],
+    },
+    "crazy_time": {
+        "elements": CRAZY_TIME_ELEMENTS,
+        "optional_elements": CRAZY_TIME_OPTIONAL_ELEMENTS,
+        "regions": CRAZY_TIME_REGIONS,
+        "positions": [("1", "Hover over the '1' bet area")],
+    },
+    "diamond_wild": {
+        "elements": DIAMOND_WILD_ELEMENTS,
+        "optional_elements": DIAMOND_WILD_OPTIONAL_ELEMENTS,
+        "regions": DIAMOND_WILD_REGIONS,
+        "positions": [],
+    },
+    "infinite_blackjack": {
+        "elements": INFINITE_BLACKJACK_ELEMENTS,
+        "optional_elements": INFINITE_BLACKJACK_OPTIONAL_ELEMENTS,
+        "regions": INFINITE_BLACKJACK_REGIONS,
+        "positions": INFINITE_BLACKJACK_POSITIONS,
+    },
+}
+
+KNOWN_GAME_TYPES = list(GAME_TYPE_DEFS.keys())
+
+
+def detect_game_type(game_name: str) -> str | None:
+    """
+    Auto-detect game type from game name by matching against known types.
+
+    Checks if the game name starts with a known type. Uses longest match
+    to avoid ambiguity (e.g. 'diamond_wild' before 'diamond').
+
+    Returns:
+        Matched game type string, or None if no match found.
+    """
+    # Sort by length descending so longer types match first
+    sorted_types = sorted(KNOWN_GAME_TYPES, key=len, reverse=True)
+    for game_type in sorted_types:
+        if game_name == game_type or game_name.startswith(game_type + "_"):
+            return game_type
+    return None
+
+
+def print_game_help(game_type: str) -> None:
+    """Print a full checklist of assets needed for a game type."""
+    defs = GAME_TYPE_DEFS.get(game_type)
+    if defs is None:
+        print(f"\n  Unknown game type: '{game_type}'")
+        print(f"  Available types: {', '.join(KNOWN_GAME_TYPES)}\n")
+        sys.exit(1)
+
+    elements = defs["elements"]
+    optional_elements = defs["optional_elements"]
+    regions = defs["regions"]
+    positions = defs["positions"]
+
+    # Counts
+    n_required_templates = len(elements)
+    n_optional_templates = len(optional_elements) + len(COMMON_OPTIONAL_ELEMENTS)
+    n_regions = len(regions)
+    n_positions = len(positions)
+
+    print(f"\n  Assets needed for: {game_type}")
+    print(f"  {'=' * 40}")
+
+    if elements or optional_elements or COMMON_OPTIONAL_ELEMENTS:
+        print(f"\n  TEMPLATE IMAGES (screenshot a UI element):")
+        for name, desc, *_ in elements:
+            print(f"    [required]  {name:<20s} {desc}")
+        for name, desc in optional_elements:
+            print(f"    [optional]  {name:<20s} {desc}")
+        for name, desc in COMMON_OPTIONAL_ELEMENTS:
+            print(f"    [optional]  {name:<20s} {desc}")
+
+    if regions:
+        print(f"\n  OCR REGIONS (draw a box around a number):")
+        for name, desc in regions:
+            print(f"    [required]  {name:<20s} {desc}")
+
+    if positions:
+        print(f"\n  CLICK POSITIONS (hover and press Enter):")
+        for name, desc in positions:
+            print(f"    [required]  {name:<20s} {desc}")
+
+    print(f"\n  Total: {n_required_templates} required templates, "
+          f"{n_optional_templates} optional templates, "
+          f"{n_regions} regions, {n_positions} positions\n")
 
 
 def reset_game(game_name: str) -> None:
@@ -179,21 +300,16 @@ def capture_elements(game_name: str, game_type: str) -> dict:
     asset_dir = PROJECT_ROOT / "assets" / game_name
     asset_dir.mkdir(parents=True, exist_ok=True)
 
-    if game_type == "slot":
-        required_elements = SLOT_ELEMENTS
-        optional_elements = SLOT_OPTIONAL_ELEMENTS
-        regions_list = SLOT_REGIONS
-    elif game_type == "crazy_time":
-        required_elements = CRAZY_TIME_ELEMENTS
-        optional_elements = CRAZY_TIME_OPTIONAL_ELEMENTS
-        regions_list = CRAZY_TIME_REGIONS
-    elif game_type == "diamond_wild":
-        required_elements = DIAMOND_WILD_ELEMENTS
-        optional_elements = DIAMOND_WILD_OPTIONAL_ELEMENTS
-        regions_list = DIAMOND_WILD_REGIONS
-    else:
+    defs = GAME_TYPE_DEFS.get(game_type)
+    if defs is None:
         print(f"Unknown game type: {game_type}")
+        print(f"Available types: {', '.join(KNOWN_GAME_TYPES)}")
         sys.exit(1)
+
+    required_elements = defs["elements"]
+    optional_elements = defs["optional_elements"]
+    regions_list = defs["regions"]
+    positions_list = defs["positions"]
 
     captured_elements = {}
     captured_regions = {}
@@ -251,12 +367,32 @@ def capture_elements(game_name: str, game_type: str) -> dict:
             captured_elements[elem_name] = filename
             print(f"    Saved: {filepath}\n")
 
-    # ── Step 3: Bet position (Crazy Time only) ──
-    if game_type == "crazy_time":
-        print("\n--- Bet Position ---\n")
-        pos = capture_position("Hover over the '1' bet area, press Enter")
-        captured_positions["1"] = {"x": pos[0], "y": pos[1]}
-        print()
+    # ── Step 3: OCR Regions ──
+    if regions_list:
+        print(f"\n--- OCR Regions ({len(regions_list)}) ---\n")
+        print("  For each region, select the area containing the number to read.\n")
+        for region_name, description in regions_list:
+            print(f"  [{region_name}] {description}")
+            result = capture_screenshot_region()
+            if result is None:
+                print("    Failed — try again")
+                result = capture_screenshot_region()
+            if result is None:
+                print("    Skipped.\n")
+                continue
+
+            _, region = result
+            captured_regions[region_name] = region
+            print(f"    Region: x={region['x']}, y={region['y']}, "
+                  f"w={region['w']}, h={region['h']}\n")
+
+    # ── Step 4: Click positions ──
+    if positions_list:
+        print(f"\n--- Click Positions ({len(positions_list)}) ---\n")
+        for pos_name, description in positions_list:
+            pos = capture_position(f"[{pos_name}] {description} — hover and press Enter")
+            captured_positions[pos_name] = {"x": pos[0], "y": pos[1]}
+            print()
 
     return {
         "elements": captured_elements,
@@ -272,12 +408,16 @@ def generate_yaml_config(game_name: str, game_type: str, captured: dict) -> str:
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / f"{game_name}.yaml"
 
-    if game_type == "slot":
-        config = _generate_slot_config(game_name, captured)
-    elif game_type == "crazy_time":
-        config = _generate_crazy_time_config(game_name, captured)
-    elif game_type == "diamond_wild":
-        config = _generate_diamond_wild_config(game_name, captured)
+    config_generators = {
+        "slot": _generate_slot_config,
+        "crazy_time": _generate_crazy_time_config,
+        "diamond_wild": _generate_diamond_wild_config,
+        "infinite_blackjack": _generate_infinite_blackjack_config,
+    }
+
+    generator = config_generators.get(game_type)
+    if generator:
+        config = generator(game_name, captured)
     else:
         config = {}
 
@@ -362,6 +502,33 @@ def _generate_diamond_wild_config(game_name: str, captured: dict) -> dict:
             "confidence": 0.85,
             "action_delay": [0.3, 0.8],
             "spin_wait": 1.0,
+            "poll_interval": 1.0,
+            "session_duration": 60,
+        },
+    }
+
+
+def _generate_infinite_blackjack_config(game_name: str, captured: dict) -> dict:
+    """Generate Infinite Blackjack YAML config."""
+    elements = captured.get("elements", {})
+    positions = captured.get("positions", {})
+
+    # Extract bet_spot position
+    bet_spot = positions.get("bet_spot", {"x": 0, "y": 0})
+
+    return {
+        "game": {
+            "name": game_name.replace("_", " ").title(),
+            "type": "infinite_blackjack",
+            "platform": "fanduel",
+            "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
+        },
+        "elements": elements,
+        "regions": captured.get("regions", {}),
+        "bet_spot": bet_spot,
+        "settings": {
+            "confidence": 0.80,
+            "action_delay": [0.2, 0.5],
             "poll_interval": 1.0,
             "session_duration": 60,
         },
@@ -481,17 +648,30 @@ def test_assets(game_name: str) -> None:
     print(f"\n  Result: {found}/{total} elements found on screen")
 
 
+def _resolve_game_type(args) -> str | None:
+    """Resolve game type from --type flag or auto-detect from game name."""
+    if args.type:
+        return args.type
+
+    detected = detect_game_type(args.game)
+    if detected:
+        print(f"  Auto-detected game type: {detected}")
+        return detected
+
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Capture game assets and generate YAML configs"
     )
     parser.add_argument(
-        "--game", required=True, help="Game name (used for directory and config naming)"
+        "--game", help="Game name (used for directory and config naming)"
     )
     parser.add_argument(
         "--type",
-        choices=["slot", "crazy_time", "diamond_wild"],
-        help="Game type (slot or crazy_time)",
+        choices=KNOWN_GAME_TYPES,
+        help="Game type (auto-detected from game name if omitted)",
     )
     parser.add_argument(
         "--test",
@@ -508,20 +688,36 @@ def main():
         metavar="ELEMENT",
         help="Re-capture a single asset by name (e.g. --update-asset dismiss_popup)",
     )
+    parser.add_argument(
+        "--help-game",
+        metavar="TYPE",
+        help="Print a checklist of all assets needed for a game type",
+    )
 
     args = parser.parse_args()
+
+    # --help-game doesn't require --game
+    if args.help_game:
+        print_game_help(args.help_game)
+        sys.exit(0)
+
+    # All other commands require --game
+    if not args.game:
+        parser.error("--game is required (unless using --help-game)")
 
     init_retina_scale()
 
     if args.update_asset:
         update_single_asset(args.game, args.update_asset)
     elif args.reset:
+        game_type = _resolve_game_type(args)
         reset_game(args.game)
-        if not args.type:
-            print("  Add --type slot or --type crazy_time to re-capture now.")
+        if not game_type:
+            print(f"  Add --type <type> to re-capture now.")
+            print(f"  Available types: {', '.join(KNOWN_GAME_TYPES)}")
             sys.exit(0)
-        captured = capture_elements(args.game, args.type)
-        config_path = generate_yaml_config(args.game, args.type, captured)
+        captured = capture_elements(args.game, game_type)
+        config_path = generate_yaml_config(args.game, game_type, captured)
         print(f"\n{'='*60}")
         print(f"  Re-captured! Config: {config_path}")
         print(f"  Run: python3 main.py --config {config_path} --duration 60")
@@ -529,19 +725,21 @@ def main():
     elif args.test:
         test_assets(args.game)
     else:
-        if not args.type:
-            print("Error: --type is required when capturing (not in --test mode)")
+        game_type = _resolve_game_type(args)
+        if not game_type:
+            print(f"Error: Could not auto-detect game type from '{args.game}'.")
+            print(f"  Use --type <type> to specify it explicitly.")
+            print(f"  Available types: {', '.join(KNOWN_GAME_TYPES)}")
             sys.exit(1)
 
-        captured = capture_elements(args.game, args.type)
-        config_path = generate_yaml_config(args.game, args.type, captured)
+        captured = capture_elements(args.game, game_type)
+        config_path = generate_yaml_config(args.game, game_type, captured)
 
         print(f"\n{'='*60}")
         print(f"  Done! Next steps:")
         print(f"  1. Review config: {config_path}")
-        print(f"  2. Adjust bet amounts in the YAML")
-        print(f"  3. Test: python3 tools/capture.py --game {args.game} --test")
-        print(f"  4. Run: python3 main.py --config {config_path} --duration 60")
+        print(f"  2. Test: python3 tools/capture.py --game {args.game} --test")
+        print(f"  3. Run: python3 main.py --config {config_path} --duration 60")
         print(f"{'='*60}\n")
 
 
