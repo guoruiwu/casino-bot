@@ -119,7 +119,7 @@ CRAZY_TIME_REGIONS = [
 ]
 
 INFINITE_BLACKJACK_ELEMENTS = [
-    ("betting_open", '"PLACE YOUR BETS" text (visible during betting phase)', True),
+    ("chip_tray", "Chip tray (visible during betting phase)", True),
     ("hit_button", "HIT button with + icon (visible during decision phase)", True),
     ("stand_button", "STAND button with - icon (visible during decision phase)", True),
     ("double_button", "DOUBLE button (visible during decision phase)", True),
@@ -183,7 +183,7 @@ GAME_STATE_GROUPS: dict[str, list[dict]] = {
         {
             "state": "Betting Phase",
             "hint": "Wait for 'PLACE YOUR BETS' to appear, then press Enter.",
-            "elements": ["betting_open", "chip_1"],
+            "elements": ["chip_tray", "chip_1"],
             "optional_elements": ["repeat_button"],
             "regions": ["balance"],
             "positions": ["bet_spot"],

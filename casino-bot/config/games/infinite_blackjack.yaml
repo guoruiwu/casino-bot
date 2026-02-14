@@ -3,7 +3,7 @@ game:
   platform: fanduel
   asset_dir: assets/infinite_blackjack/
 elements:
-  betting_open: betting_open.png
+  chip_tray: chip_tray.png
   chip_1: chip_1.png
   hit_button: hit_button.png
   stand_button: stand_button.png

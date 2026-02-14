@@ -182,7 +182,7 @@ class InfiniteBlackjackGame(BaseGame):
 
         Priority:
           1. HIT button visible → DECISION (player must act)
-          2. betting_open visible → BETTING (place bets)
+          2. chip_tray visible → BETTING (place bets)
           3. Otherwise → WAITING
         """
         screenshot = take_screenshot()
@@ -194,10 +194,10 @@ class InfiniteBlackjackGame(BaseGame):
         ):
             return InfiniteBlackjackState.DECISION
 
-        # Check for betting phase
-        betting_open = self.get_element("betting_open")
-        if betting_open and find_element(
-            betting_open, self.confidence, screenshot=screenshot
+        # Check for betting phase (chip tray visible = betting is open)
+        chip_tray = self.get_element("chip_tray")
+        if chip_tray and find_element(
+            chip_tray, self.confidence, screenshot=screenshot
         ):
             return InfiniteBlackjackState.BETTING
 
