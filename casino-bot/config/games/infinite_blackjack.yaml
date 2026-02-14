@@ -2,27 +2,35 @@ game:
   name: Infinite Blackjack
   platform: fanduel
   asset_dir: assets/infinite_blackjack/
-
 elements:
-  betting_open: betting_open.png       # "PLACE YOUR BETS" text
-  hit_button: hit_button.png           # HIT button (green + icon)
-  stand_button: stand_button.png       # STAND button (red - icon)
-  double_button: double_button.png     # DOUBLE button
-  chip_1: chip_1.png                   # $1 chip in the chip tray
-  # repeat_button: repeat_button.png   # REPEAT button (capture with: --update-asset repeat_button)
-
+  betting_open: betting_open.png
+  chip_1: chip_1.png
+  hit_button: hit_button.png
+  stand_button: stand_button.png
+  double_button: double_button.png
 regions:
-  player_total: {x: 0, y: 0, w: 0, h: 0}   # green circle showing player hand total
-  dealer_upcard: {x: 0, y: 0, w: 0, h: 0}   # value label near dealer's visible card
-  balance: {x: 0, y: 0, w: 0, h: 0}         # balance display at bottom
-
-bet_spot: {x: 0, y: 0}  # where to click on the table after selecting $1 chip
-
+  balance:
+    x: 90
+    y: 652
+    w: 31
+    h: 14
+  player_total:
+    x: 343
+    y: 622
+    w: 16
+    h: 10
+  dealer_total:
+    x: 241
+    y: 534
+    w: 15
+    h: 11
+bet_spot:
+  x: 377
+  y: 620
 settings:
-  confidence: 0.80
-  action_delay: [0.2, 0.5]
+  confidence: 0.8
+  action_delay:
+  - 0.2
+  - 0.5
   poll_interval: 1.0
   session_duration: 60
-  # reality_check_click:
-  #   x: 500
-  #   y: 400

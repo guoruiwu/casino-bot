@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Columns: dealer upcard (2-11, where 11 = Ace)
 
 BASIC_STRATEGY: dict[int, dict[int, str]] = {
-    # player_total: {dealer_upcard: action}
+    # player_total: {dealer_total: action}
     4:  {2: "H", 3: "H", 4: "H", 5: "H", 6: "H", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
     5:  {2: "H", 3: "H", 4: "H", 5: "H", 6: "H", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
     6:  {2: "H", 3: "H", 4: "H", 5: "H", 6: "H", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
@@ -71,7 +71,7 @@ def get_action(player_total: int, dealer_upcard: int) -> str:
 
     Args:
         player_total: Player's hand total (4-21).
-        dealer_upcard: Dealer's visible card value (2-11, where 11 = Ace).
+        dealer_total: Dealer's visible card value (2-11, where 11 = Ace).
 
     Returns:
         "hit", "stand", or "double".
@@ -258,10 +258,10 @@ class InfiniteBlackjackGame(BaseGame):
             self._click_stand()
             return
 
-        # Read dealer upcard
-        dealer_upcard = self._read_dealer_upcard()
-        if dealer_upcard is None:
-            logger.warning("Could not read dealer upcard — using conservative play")
+        # Read dealer total
+        dealer_total = self._read_dealer_total()
+        if dealer_total is None:
+            logger.warning("Could not read dealer total — using conservative play")
             # Conservative fallback: stand on 12+, hit on 11 or less
             if player_total >= 12:
                 self._click_stand()
@@ -270,9 +270,9 @@ class InfiniteBlackjackGame(BaseGame):
             return
 
         # Look up basic strategy
-        action = get_action(player_total, dealer_upcard)
+        action = get_action(player_total, dealer_total)
         logger.info(
-            f"Player: {player_total}, Dealer: {dealer_upcard} → {action.upper()}"
+            f"Player: {player_total}, Dealer: {dealer_total} → {action.upper()}"
         )
 
         if action == "double":
@@ -339,9 +339,9 @@ class InfiniteBlackjackGame(BaseGame):
             return total
         return None
 
-    def _read_dealer_upcard(self) -> Optional[int]:
-        """Read the dealer's visible card value via OCR."""
-        region = self.get_region("dealer_upcard")
+    def _read_dealer_total(self) -> Optional[int]:
+        """Read the dealer's total via OCR."""
+        region = self.get_region("dealer_total")
         if not region:
             return None
 

@@ -132,7 +132,7 @@ INFINITE_BLACKJACK_OPTIONAL_ELEMENTS = [
 
 INFINITE_BLACKJACK_REGIONS = [
     ("player_total", "Green circle showing player hand total (near player cards)"),
-    ("dealer_upcard", "Label showing dealer visible card value (near dealer card)"),
+    ("dealer_total", "Dealer total display (shows dealer hand value)"),
     ("balance", "Balance amount display (bottom of screen)"),
 ]
 
@@ -193,7 +193,7 @@ GAME_STATE_GROUPS: dict[str, list[dict]] = {
             "hint": "Wait for HIT/STAND buttons to appear, then press Enter.",
             "elements": ["hit_button", "stand_button", "double_button"],
             "optional_elements": [],
-            "regions": ["player_total", "dealer_upcard"],
+            "regions": ["player_total", "dealer_total"],
             "positions": [],
         },
     ],
