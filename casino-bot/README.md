@@ -87,11 +87,11 @@ python3 tools/capture.py --game slot --test
 ### 5. Run the Bot
 
 ```bash
-# Run for 60 minutes (default)
-python3 main.py --config config/games/slot.yaml
+# Interactive mode — select a game and duration from the terminal
+python3 main.py
 
-# Run for a custom duration
-python3 main.py --config config/games/slot.yaml --duration 90
+# Or specify directly via CLI flags
+python3 main.py --config config/games/crazy_time.yaml --duration 90
 ```
 
 ### 6. Stop the Bot
@@ -127,7 +127,7 @@ When a new leaderboard game drops:
 2. `python3 tools/capture.py --game slot`
 3. Screenshot each UI element (tool walks you through it)
 4. Edit the generated YAML config if needed (bet amount, regions, thresholds)
-5. `python3 main.py --config config/games/slot.yaml --duration 60`
+5. `python3 main.py`
 
 ~5 minutes to set up a new slot game. No code changes needed.
 
