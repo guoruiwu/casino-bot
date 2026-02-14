@@ -54,6 +54,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pyautogui
+import pytesseract
 import yaml
 from InquirerPy import inquirer
 from InquirerPy.separator import Separator
@@ -63,6 +64,27 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.screen import find_element, init_retina_scale, take_screenshot
+
+# Set up tesseract path (same logic as src/screen.py)
+import shutil
+
+_tesseract_path = shutil.which("tesseract") or "/opt/homebrew/bin/tesseract"
+if Path(_tesseract_path).exists():
+    pytesseract.pytesseract.tesseract_cmd = _tesseract_path
+
+
+def _ocr_preview(crop_2x: np.ndarray, preprocess: str = "thresh") -> str:
+    """Run OCR on a cropped 2x region and return the recognized text."""
+    gray = cv2.cvtColor(crop_2x, cv2.COLOR_BGR2GRAY)
+    if preprocess == "thresh":
+        gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    elif preprocess == "blur":
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    scale = 2
+    gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    text = pytesseract.image_to_string(gray, config="--psm 7")
+    return text.strip()
+
 
 # ── Common optional elements (shared across all games) ───────────────────
 COMMON_OPTIONAL_ELEMENTS = [
@@ -403,10 +425,17 @@ def capture_elements(game: str) -> dict:
                 print("    Skipped.\n")
                 continue
 
-            _, region = result
+            img, region = result
             captured_regions[region_name] = region
             print(f"    Region: x={region['x']}, y={region['y']}, "
-                  f"w={region['w']}, h={region['h']}\n")
+                  f"w={region['w']}, h={region['h']}")
+            # Show OCR preview
+            try:
+                preview = _ocr_preview(img)
+                print(f'    OCR preview: "{preview}"')
+            except Exception:
+                print("    OCR preview: <failed>")
+            print()
 
     # ── Step 4: Click positions ──
     if positions_list:
@@ -730,6 +759,9 @@ class RegionSelector:
         # Overlay history: list of (type, data) for drawn markers
         self._overlays: list[tuple[str, tuple]] = []
 
+        # OCR preview text (shown after capturing a region)
+        self._ocr_preview_text: str | None = None
+
     def run(self) -> dict[str, dict]:
         """Run the selector and return results when all tasks are done."""
         cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
@@ -749,12 +781,12 @@ class RegionSelector:
             elif key == ord("q") or key == 27:  # q or Escape
                 break
 
-            # Check if all tasks are done
+            # Check if all tasks are done — wait for explicit confirmation
             if self.task_idx >= len(self.tasks):
-                # Show "all done" for a moment, then close
                 self._redraw()
-                cv2.waitKey(800)
-                break
+                confirmed = self._wait_for_confirmation()
+                if confirmed:
+                    break  # exit outer loop
 
         cv2.destroyWindow(self.WINDOW_NAME)
         return self.results
@@ -785,7 +817,7 @@ class RegionSelector:
         # Draw prompt bar at the top
         task = self._current_task()
         if task is None:
-            prompt = "All done! Press any key to close."
+            prompt = "All done! Press Enter/Space to confirm, or 'u' to undo."
         else:
             n = self.task_idx + 1
             total = len(self.tasks)
@@ -800,6 +832,8 @@ class RegionSelector:
 
         # Draw a dark banner at the top for readability
         banner_h = 40
+        if self._ocr_preview_text is not None:
+            banner_h = 70  # taller banner to fit OCR preview line
         cv2.rectangle(display, (0, 0), (self.display_w, banner_h), (30, 30, 30), -1)
         # Truncate prompt if too long for display
         cv2.putText(
@@ -812,6 +846,20 @@ class RegionSelector:
             1,
             cv2.LINE_AA,
         )
+
+        # Draw OCR preview text on a second line if available
+        if self._ocr_preview_text is not None:
+            ocr_label = f'OCR preview: "{self._ocr_preview_text}"'
+            cv2.putText(
+                display,
+                ocr_label,
+                (10, 56),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 200),  # cyan-green for visibility
+                1,
+                cv2.LINE_AA,
+            )
 
         cv2.imshow(self.WINDOW_NAME, display)
 
@@ -866,6 +914,7 @@ class RegionSelector:
 
         elif event == cv2.EVENT_LBUTTONUP and self._drawing:
             self._drawing = False
+            self._ocr_preview_text = None  # clear previous OCR preview
             x1 = min(self._start_x, x)
             y1 = min(self._start_y, y)
             x2 = max(self._start_x, x)
@@ -896,6 +945,11 @@ class RegionSelector:
                     "w": x2 - x1,
                     "h": y2 - y1,
                 }
+                # Run OCR on the cropped region and show preview
+                try:
+                    self._ocr_preview_text = _ocr_preview(crop)
+                except Exception:
+                    self._ocr_preview_text = "<OCR failed>"
 
             self._overlays.append(("rect", (x1, y1, x2, y2)))
             self._advance()
@@ -920,6 +974,23 @@ class RegionSelector:
         if self._overlays:
             self._overlays.pop()
         self._redraw()
+
+    def _wait_for_confirmation(self) -> bool:
+        """
+        Block until the user confirms (Enter/Space/q/Escape) or undoes.
+
+        Returns:
+            True if the user confirmed (should exit).
+            False if the user pressed undo (caller should continue the loop).
+        """
+        while True:
+            key = cv2.waitKey(30) & 0xFF
+            if key == ord("u"):
+                self._on_undo()
+                return False  # go back to main loop
+            if key in (13, 32, ord("q"), 27):
+                # Enter, Space, q, or Escape — confirmed
+                return True
 
 
 def _build_task_list(
@@ -1039,7 +1110,16 @@ def _collect_snapshots(
 
         screenshot = take_screenshot()
         snapshots[state_name] = screenshot
+
+        # Persist snapshot to disk so it can be reused by --redraw-regions
+        snapshot_dir = PROJECT_ROOT / "assets" / game
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = state_name.lower().replace(" ", "_")
+        snapshot_path = snapshot_dir / f"_snapshot_{safe_name}.png"
+        cv2.imwrite(str(snapshot_path), screenshot)
+
         print(f"    Screenshot captured for: {state_name}")
+        print(f"    Saved snapshot: {snapshot_path}")
         print()
 
     print("  All snapshots collected!\n")
@@ -1242,6 +1322,117 @@ def snapshot_capture_selected(
         "positions": captured_positions,
         "asset_dir": f"assets/{game}/",
     }
+
+
+def redraw_regions(game: str) -> None:
+    """
+    Re-draw OCR regions on previously saved snapshots without taking new
+    screenshots.  Loads cached _snapshot_*.png files from assets/<game>/,
+    opens the RegionSelector for region-only tasks, and patches the existing
+    YAML config with the new coordinates.
+    """
+    config_path = PROJECT_ROOT / "config" / "games" / f"{game}.yaml"
+    if not config_path.exists():
+        print(f"\n  Config not found: {config_path}")
+        print(f"  Run a full capture first: python3 tools/capture.py --game {game} --snapshot")
+        sys.exit(1)
+
+    state_groups = GAME_STATE_GROUPS.get(game)
+    if not state_groups:
+        print(f"\n  No state groups defined for '{game}'. --redraw-regions requires snapshot mode.")
+        sys.exit(1)
+
+    asset_dir = PROJECT_ROOT / "assets" / game
+
+    # Load cached snapshots from disk
+    snapshots: dict[str, np.ndarray] = {}
+    missing_states: list[str] = []
+    for group in state_groups:
+        state_name = group["state"]
+        # Only load snapshots for states that have regions
+        if not group.get("regions"):
+            continue
+        safe_name = state_name.lower().replace(" ", "_")
+        snapshot_path = asset_dir / f"_snapshot_{safe_name}.png"
+        if snapshot_path.exists():
+            img = cv2.imread(str(snapshot_path), cv2.IMREAD_COLOR)
+            if img is not None:
+                snapshots[state_name] = img
+            else:
+                missing_states.append(state_name)
+        else:
+            missing_states.append(state_name)
+
+    if missing_states:
+        print(f"\n  Missing cached snapshots for: {', '.join(missing_states)}")
+        print("  Taking new screenshots for those states...")
+        print()
+        # Build mini state_groups for just the missing states
+        missing_groups = [g for g in state_groups if g["state"] in missing_states]
+        fresh = _collect_snapshots(game, missing_groups)
+        snapshots.update(fresh)
+
+    if not snapshots:
+        print("\n  No states with regions found. Nothing to redraw.")
+        return
+
+    print(f"\n{'='*60}")
+    print(f"  Redrawing regions for: {game}")
+    print(f"{'='*60}")
+    print()
+
+    # Phase 2: Open RegionSelector for each state, region tasks only
+    new_regions: dict[str, dict] = {}
+
+    for group in state_groups:
+        state_name = group["state"]
+        screenshot = snapshots.get(state_name)
+        if screenshot is None:
+            continue
+
+        # Build tasks filtered to regions only
+        tasks = _tasks_for_state(game, group)
+        region_tasks = [t for t in tasks if t["category"] == "region"]
+        if not region_tasks:
+            continue
+
+        region_names = ", ".join(t["name"] for t in region_tasks)
+        print(f"  Opening region selector for: {state_name}")
+        print(f"    Regions to draw: {region_names}")
+        print()
+
+        selector = RegionSelector(screenshot, region_tasks, asset_dir)
+        results = selector.run()
+
+        for name, data in results.items():
+            if data["category"] == "region":
+                new_regions[name] = {
+                    "x": data["x"],
+                    "y": data["y"],
+                    "w": data["w"],
+                    "h": data["h"],
+                }
+
+    if not new_regions:
+        print("  No regions were drawn. Config unchanged.")
+        return
+
+    # Patch the existing YAML — only update the regions section
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    existing_regions = config.get("regions", {})
+    existing_regions.update(new_regions)
+    config["regions"] = existing_regions
+
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    print(f"\n  Updated regions in: {config_path}")
+    for name, coords in new_regions.items():
+        print(f"    {name}: x={coords['x']}, y={coords['y']}, "
+              f"w={coords['w']}, h={coords['h']}")
+    print(f"\n  Done! Test with: python3 tools/capture.py --game {game} --test\n")
 
 
 # ── Interactive mode functions ────────────────────────────────────────────
@@ -1469,10 +1660,17 @@ def capture_selected_elements(
                 print("    Skipped.\n")
                 continue
 
-            _, region = result
+            img, region = result
             captured_regions[region_name] = region
             print(f"    Region: x={region['x']}, y={region['y']}, "
-                  f"w={region['w']}, h={region['h']}\n")
+                  f"w={region['w']}, h={region['h']}")
+            # Show OCR preview
+            try:
+                preview = _ocr_preview(img)
+                print(f'    OCR preview: "{preview}"')
+            except Exception:
+                print("    OCR preview: <failed>")
+            print()
 
     # ── Capture click positions ──
     if sel_positions:
@@ -1489,6 +1687,34 @@ def capture_selected_elements(
         "positions": captured_positions,
         "asset_dir": f"assets/{game}/",
     }
+
+
+def interactive_main() -> None:
+    """Top-level interactive menu when no CLI flags are provided."""
+    action = inquirer.select(
+        message="What would you like to do?",
+        choices=[
+            {"name": "Capture new game assets", "value": "new"},
+            {"name": "Redraw OCR regions (from saved screenshots)", "value": "redraw"},
+            {"name": "Update existing assets", "value": "update"},
+        ],
+        keybindings=VIM_NAV_KEYBINDINGS,
+    ).execute()
+
+    if action == "new":
+        interactive_new_game()
+    elif action == "redraw":
+        interactive_redraw_regions()
+    elif action == "update":
+        game = interactive_select_game()
+        interactive_update_game(game)
+
+
+def interactive_redraw_regions() -> None:
+    """Interactive flow: select a game and redraw OCR regions from saved screenshots."""
+    game = interactive_select_game()
+    init_retina_scale()
+    redraw_regions(game)
 
 
 def interactive_new_game() -> None:
@@ -1589,6 +1815,12 @@ def main():
         help="Use snapshot mode: take screenshots of each game state first, "
              "then crop assets from frozen images (recommended for live games)",
     )
+    parser.add_argument(
+        "--redraw-regions",
+        action="store_true",
+        help="Re-draw OCR regions on existing screenshots without taking new ones. "
+             "Requires --game and a prior --snapshot run.",
+    )
 
     args = parser.parse_args()
 
@@ -1599,12 +1831,14 @@ def main():
 
     # No --game flag: enter fully interactive mode
     if not args.game:
-        interactive_new_game()
+        interactive_main()
         sys.exit(0)
 
     init_retina_scale()
 
-    if args.update_asset:
+    if args.redraw_regions:
+        redraw_regions(args.game)
+    elif args.update_asset:
         if args.update_asset == "__interactive__":
             interactive_update_game(args.game)
         else:

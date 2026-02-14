@@ -10,20 +10,20 @@ elements:
   double_button: double_button.png
 regions:
   balance:
-    x: 90
-    y: 652
-    w: 31
-    h: 14
+    x: 92
+    y: 657
+    w: 32
+    h: 8
   player_total:
-    x: 343
-    y: 622
-    w: 16
-    h: 10
+    x: 339
+    y: 619
+    w: 23
+    h: 15
   dealer_total:
-    x: 241
-    y: 534
-    w: 15
-    h: 11
+    x: 236
+    y: 533
+    w: 28
+    h: 13
 bet_spot:
   x: 377
   y: 620
