@@ -209,6 +209,9 @@ class BaseGame(ABC):
         if reality_check is None:
             return False
 
+        if not reality_check.exists():
+            return False
+
         screenshot = take_screenshot()
         if find_element(reality_check, self.confidence, screenshot=screenshot):
             logger.info("Reality check popup detected — dismissing")
