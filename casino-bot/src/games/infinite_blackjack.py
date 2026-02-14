@@ -179,45 +179,6 @@ def get_action_no_dealer(player_total: int, is_soft: bool = False) -> str:
     return "hit" if votes["hit"] >= votes["stand"] else "stand"
 
 
-# Dealer upcards that OCR consistently fails to read (thin/simple glyphs
-# that Tesseract cannot distinguish from the pill-shaped background).
-# Empirically determined from debug screenshots: every OCR failure is one
-# of these three values.
-_OCR_FAIL_DEALER_UPCARDS: tuple[int, ...] = (6, 7, 11)
-
-
-def get_action_constrained_dealer(
-    player_total: int,
-    is_soft: bool = False,
-    candidates: tuple[int, ...] = _OCR_FAIL_DEALER_UPCARDS,
-) -> str:
-    """
-    Return the majority-vote action across a constrained set of likely dealer
-    upcards.
-
-    Used when dealer OCR fails — instead of weighting over all 10 possible
-    upcards, we only consider the values known to cause OCR failures and
-    pick the action that the majority agree on.
-
-    Args:
-        player_total: Player's hand total (4-21).
-        is_soft: True if the hand contains an Ace counted as 11 (soft hand).
-        candidates: Tuple of dealer upcards to vote across.
-
-    Returns:
-        "hit" or "stand".
-    """
-    votes: dict[str, int] = {"hit": 0, "stand": 0}
-
-    for upcard in candidates:
-        action = get_action(player_total, upcard, is_soft=is_soft)
-        # Treat "double" as "hit" since double may not be available.
-        if action == "double":
-            action = "hit"
-        votes[action] = votes.get(action, 0) + 1
-
-    return "hit" if votes["hit"] >= votes["stand"] else "stand"
-
 
 class InfiniteBlackjackState(str, Enum):
     """Possible states for the Infinite Blackjack state machine."""
@@ -372,12 +333,13 @@ class InfiniteBlackjackGame(BaseGame):
         # Read player total (returns tuple of (total, is_soft) or None)
         result = self._read_player_total()
         if result is None:
-            # OCR failures for the player total are empirically always 7 or 8,
-            # both of which call for "hit" against every dealer upcard.
+            # Player total unknown — hitting is the EV-optimal action since
+            # the majority of possible hand totals call for "hit" against
+            # most dealer upcards in basic strategy.
             region = self.get_region("player_total")
             logger.warning(
                 f"Could not read player total — defaulting to hit "
-                f"(OCR failures are consistently 7 or 8, both always hit) "
+                f"(EV-optimal when hand total is unknown) "
                 f"(region: {region})"
             )
             self._click_hit()
@@ -388,16 +350,14 @@ class InfiniteBlackjackGame(BaseGame):
         # Read dealer total
         dealer_total = self._read_dealer_total()
         if dealer_total is None:
-            # OCR failures for the dealer upcard are empirically always 6, 7,
-            # or 11.  Use majority-vote strategy across those three values
-            # instead of weighting over all possible upcards.
+            # Dealer upcard unknown — use probability-weighted strategy across
+            # all possible dealer upcards to pick the EV-optimal action.
             region = self.get_region("dealer_total")
             soft_label = "soft " if is_soft else ""
-            action = get_action_constrained_dealer(player_total, is_soft)
+            action = get_action_no_dealer(player_total, is_soft)
             logger.warning(
-                f"Could not read dealer total — using constrained strategy "
-                f"(majority vote over likely upcards {_OCR_FAIL_DEALER_UPCARDS}): "
-                f"{action.upper()} "
+                f"Could not read dealer total — using probability-weighted "
+                f"strategy across all dealer upcards: {action.upper()} "
                 f"(player was {soft_label}{player_total}, region: {region})"
             )
             if action == "stand":
