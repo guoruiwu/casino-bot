@@ -5,21 +5,17 @@
 # Leaderboard: Money Multiplier (win-to-wager ratio)
 #
 # Quick setup for a new slot:
-#   1. cp config/games/slot_template.yaml config/games/MY_SLOT.yaml
-#   2. Open the slot in Chrome
-#   3. Run: python3 tools/capture.py --game MY_SLOT
-#   4. Update this file with the correct element filenames and regions
-#   5. Test: python3 tools/capture.py --game MY_SLOT --test
-#   6. Run: python3 main.py --config config/games/MY_SLOT.yaml --duration 60
-#
-# Or let the capture tool generate the YAML for you:
-#   python3 tools/capture.py --game MY_SLOT
+#   1. Open the slot in Chrome
+#   2. Run: python3 tools/capture.py --game slot
+#   3. Update the generated config if needed
+#   4. Test: python3 tools/capture.py --game slot --test
+#   5. Run: python3 main.py --config config/games/slot.yaml --duration 60
 # ─────────────────────────────────────────────────────────────
 
 game:
   name: "Slot Name - Platform"            # e.g. "Starburst - DraftKings"
   platform: draftkings                    # "draftkings" or "fanduel"
-  asset_dir: "assets/MY_SLOT/"            # Path to captured screenshots
+  asset_dir: "assets/slot/"               # Path to captured screenshots
 
 # Spin mode: "manual" or "autoplay"
 # - manual: bot clicks spin every time (works everywhere)

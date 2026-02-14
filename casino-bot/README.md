@@ -40,10 +40,10 @@ Open the game in Chrome, then run:
 
 ```bash
 # For a slot game
-python3 tools/capture.py --game my_slot_dk
+python3 tools/capture.py --game slot
 
 # For Crazy Time Live
-python3 tools/capture.py --game crazy_time_dk
+python3 tools/capture.py --game crazy_time
 
 # For Diamond Wild
 python3 tools/capture.py --game diamond_wild
@@ -57,7 +57,7 @@ Re-capture (or add) a single asset without re-running the full capture flow:
 
 ```bash
 python3 tools/capture.py --game diamond_wild --update-asset dismiss_popup
-python3 tools/capture.py --game my_slot_dk --update-asset spin_button
+python3 tools/capture.py --game slot --update-asset spin_button
 ```
 
 This saves the new screenshot and adds the element to the YAML config if it's not already there.
@@ -81,17 +81,17 @@ The bot checks for this popup every loop iteration, before normal game logic. If
 Verify all captured assets can be found on the current screen:
 
 ```bash
-python3 tools/capture.py --game my_slot_dk --test
+python3 tools/capture.py --game slot --test
 ```
 
 ### 5. Run the Bot
 
 ```bash
 # Run for 60 minutes (default)
-python3 main.py --config config/games/my_slot_dk.yaml
+python3 main.py --config config/games/slot.yaml
 
 # Run for a custom duration
-python3 main.py --config config/games/my_slot_dk.yaml --duration 90
+python3 main.py --config config/games/slot.yaml --duration 90
 ```
 
 ### 6. Stop the Bot
@@ -110,13 +110,13 @@ pip3 install -r requirements.txt
 # 2. Grant macOS permissions (Accessibility + Screen Recording)
 
 # 3. Re-capture assets for each game you want to run
-python3 tools/capture.py --game crazy_time_dk
+python3 tools/capture.py --game crazy_time
 ```
 
 To reset and re-capture an existing game (e.g. if the UI changed):
 
 ```bash
-python3 tools/capture.py --game crazy_time_dk --reset
+python3 tools/capture.py --game crazy_time --reset
 ```
 
 ## Weekly Update Workflow
@@ -124,10 +124,10 @@ python3 tools/capture.py --game crazy_time_dk --reset
 When a new leaderboard game drops:
 
 1. Open the game in Chrome
-2. `python3 tools/capture.py --game <name>`
+2. `python3 tools/capture.py --game slot`
 3. Screenshot each UI element (tool walks you through it)
 4. Edit the generated YAML config if needed (bet amount, regions, thresholds)
-5. `python3 main.py --config config/games/<name>.yaml --duration 60`
+5. `python3 main.py --config config/games/slot.yaml --duration 60`
 
 ~5 minutes to set up a new slot game. No code changes needed.
 

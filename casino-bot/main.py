@@ -3,8 +3,8 @@
 Casino Leaderboard Bot — Main Entry Point
 
 Usage:
-  python3 main.py --config config/games/crazy_time_dk.yaml
-  python3 main.py --config config/games/crazy_time_dk.yaml --duration 90
+  python3 main.py --config config/games/crazy_time.yaml
+  python3 main.py --config config/games/crazy_time.yaml --duration 90
 """
 
 from __future__ import annotations
@@ -52,16 +52,13 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 def detect_game(config_path: str) -> str:
-    """Detect the game from the config filename using prefix matching."""
+    """Detect the game from the config filename (must match a known game key)."""
     stem = Path(config_path).stem
-    known_games = sorted(GAME_RUNNERS.keys(), key=len, reverse=True)
-    for game in known_games:
-        if stem == game or stem.startswith(game + "_"):
-            return game
-
-    print(f"Error: Could not detect game from config filename '{stem}'")
-    print(f"Supported games: {', '.join(GAME_RUNNERS.keys())}")
-    sys.exit(1)
+    if stem not in GAME_RUNNERS:
+        print(f"Error: Unknown game '{stem}'")
+        print(f"Supported games: {', '.join(GAME_RUNNERS.keys())}")
+        sys.exit(1)
+    return stem
 
 
 def get_runner_class(game: str):
@@ -84,9 +81,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 main.py --config config/games/crazy_time_dk.yaml
-  python3 main.py --config config/games/crazy_time_dk.yaml --duration 90
-  python3 main.py --config config/games/my_slot.yaml --duration 30 --verbose
+  python3 main.py --config config/games/crazy_time.yaml
+  python3 main.py --config config/games/crazy_time.yaml --duration 90
+  python3 main.py --config config/games/slot.yaml --duration 30 --verbose
         """,
     )
     parser.add_argument(

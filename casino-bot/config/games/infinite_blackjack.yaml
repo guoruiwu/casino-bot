@@ -1,7 +1,7 @@
 game:
-  name: Infinite Blackjack FD
+  name: Infinite Blackjack
   platform: fanduel
-  asset_dir: assets/infinite_blackjack_fd/
+  asset_dir: assets/infinite_blackjack/
 
 elements:
   betting_open: betting_open.png       # "PLACE YOUR BETS" text

@@ -1,7 +1,7 @@
 game:
-  name: Crazy Time Dk
+  name: Crazy Time
   platform: draftkings
-  asset_dir: assets/crazy_time_dk/
+  asset_dir: assets/crazy_time/
 elements:
   betting_open: betting_open.png
   # reality_check: reality_check.png    # Capture with: --update-asset reality_check

@@ -9,23 +9,23 @@ Usage:
   # See what assets are needed for a game
   python3 tools/capture.py --help-game infinite_blackjack
 
-  # Capture all assets for a new game (auto-detected from name)
-  python3 tools/capture.py --game infinite_blackjack_fd
-  python3 tools/capture.py --game crazy_time_dk
-  python3 tools/capture.py --game my_slot_dk
+  # Capture all assets for a game
+  python3 tools/capture.py --game infinite_blackjack
+  python3 tools/capture.py --game crazy_time
+  python3 tools/capture.py --game slot
 
   # Re-capture assets interactively (arrow-key picker)
   python3 tools/capture.py --game diamond_wild --update-asset
 
   # Re-capture a single asset by name
   python3 tools/capture.py --game diamond_wild --update-asset dismiss_popup
-  python3 tools/capture.py --game my_slot_dk --update-asset spin_button
+  python3 tools/capture.py --game slot --update-asset spin_button
 
   # Test if all assets for a game can be found on screen
-  python3 tools/capture.py --game my_slot_dk --test
+  python3 tools/capture.py --game slot --test
 
   # Reset and re-capture everything
-  python3 tools/capture.py --game my_slot_dk --reset
+  python3 tools/capture.py --game slot --reset
 
 How it works:
   1. Takes a screenshot of your current screen
@@ -164,24 +164,6 @@ GAME_DEFS = {
 KNOWN_GAMES = list(GAME_DEFS.keys())
 
 
-def detect_game(game_name: str) -> str | None:
-    """
-    Auto-detect game from game name by matching against known games.
-
-    Checks if the game name starts with a known game. Uses longest match
-    to avoid ambiguity (e.g. 'diamond_wild' before 'diamond').
-
-    Returns:
-        Matched game string, or None if no match found.
-    """
-    # Sort by length descending so longer names match first
-    sorted_games = sorted(KNOWN_GAMES, key=len, reverse=True)
-    for game in sorted_games:
-        if game_name == game or game_name.startswith(game + "_"):
-            return game
-    return None
-
-
 def print_game_help(game: str) -> None:
     """Print a full checklist of assets needed for a game."""
     defs = GAME_DEFS.get(game)
@@ -228,12 +210,12 @@ def print_game_help(game: str) -> None:
           f"{n_regions} regions, {n_positions} positions\n")
 
 
-def reset_game(game_name: str) -> None:
+def reset_game(game: str) -> None:
     """Delete all screenshots and config for a game."""
     import shutil
 
-    asset_dir = PROJECT_ROOT / "assets" / game_name
-    config_path = PROJECT_ROOT / "config" / "games" / f"{game_name}.yaml"
+    asset_dir = PROJECT_ROOT / "assets" / game
+    config_path = PROJECT_ROOT / "config" / "games" / f"{game}.yaml"
 
     deleted = []
     if asset_dir.exists():
@@ -244,12 +226,12 @@ def reset_game(game_name: str) -> None:
         deleted.append(str(config_path))
 
     if deleted:
-        print(f"\n  Reset '{game_name}' — deleted:")
+        print(f"\n  Reset '{game}' — deleted:")
         for d in deleted:
             print(f"    {d}")
         print()
     else:
-        print(f"\n  Nothing to reset for '{game_name}'.\n")
+        print(f"\n  Nothing to reset for '{game}'.\n")
 
 
 def capture_screenshot_region() -> tuple[np.ndarray, dict] | None:
@@ -303,16 +285,12 @@ def capture_position(prompt: str) -> tuple[int, int]:
     return (pos.x, pos.y)
 
 
-def capture_elements(game_name: str, game: str) -> dict:
+def capture_elements(game: str) -> dict:
     """Walk through capturing elements for a game — only the essentials."""
-    asset_dir = PROJECT_ROOT / "assets" / game_name
+    asset_dir = PROJECT_ROOT / "assets" / game
     asset_dir.mkdir(parents=True, exist_ok=True)
 
-    defs = GAME_DEFS.get(game)
-    if defs is None:
-        print(f"Unknown game: {game}")
-        print(f"Available games: {', '.join(KNOWN_GAMES)}")
-        sys.exit(1)
+    defs = GAME_DEFS[game]
 
     required_elements = defs["elements"]
     optional_elements = defs["optional_elements"]
@@ -324,7 +302,7 @@ def capture_elements(game_name: str, game: str) -> dict:
     captured_positions = {}
 
     print(f"\n{'='*60}")
-    print(f"  Capturing assets for: {game_name}")
+    print(f"  Capturing assets for: {game}")
     print(f"  Asset directory: {asset_dir}")
     print(f"{'='*60}")
     print()
@@ -406,15 +384,15 @@ def capture_elements(game_name: str, game: str) -> dict:
         "elements": captured_elements,
         "regions": captured_regions,
         "positions": captured_positions,
-        "asset_dir": f"assets/{game_name}/",
+        "asset_dir": f"assets/{game}/",
     }
 
 
-def generate_yaml_config(game_name: str, game: str, captured: dict) -> str:
+def generate_yaml_config(game: str, captured: dict) -> str:
     """Generate a YAML config file from captured data."""
     config_dir = PROJECT_ROOT / "config" / "games"
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / f"{game_name}.yaml"
+    config_path = config_dir / f"{game}.yaml"
 
     config_generators = {
         "slot": _generate_slot_config,
@@ -425,7 +403,7 @@ def generate_yaml_config(game_name: str, game: str, captured: dict) -> str:
 
     generator = config_generators.get(game)
     if generator:
-        config = generator(game_name, captured)
+        config = generator(game, captured)
     else:
         config = {}
 
@@ -436,13 +414,13 @@ def generate_yaml_config(game_name: str, game: str, captured: dict) -> str:
     return str(config_path)
 
 
-def _generate_slot_config(game_name: str, captured: dict) -> dict:
+def _generate_slot_config(game: str, captured: dict) -> dict:
     """Generate slot YAML config."""
     return {
         "game": {
-            "name": game_name.replace("_", " ").title(),
+            "name": game.replace("_", " ").title(),
             "platform": "draftkings",
-            "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
+            "asset_dir": captured.get("asset_dir", f"assets/{game}/"),
         },
         "spin_mode": "manual",
         "elements": captured.get("elements", {}),
@@ -461,7 +439,7 @@ def _generate_slot_config(game_name: str, captured: dict) -> dict:
     }
 
 
-def _generate_crazy_time_config(game_name: str, captured: dict) -> dict:
+def _generate_crazy_time_config(game: str, captured: dict) -> dict:
     """Generate Crazy Time YAML config."""
     elements = captured.get("elements", {})
     positions = captured.get("positions", {})
@@ -477,9 +455,9 @@ def _generate_crazy_time_config(game_name: str, captured: dict) -> dict:
 
     return {
         "game": {
-            "name": game_name.replace("_", " ").title(),
+            "name": game.replace("_", " ").title(),
             "platform": "draftkings",
-            "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
+            "asset_dir": captured.get("asset_dir", f"assets/{game}/"),
         },
         "elements": elements,
         "regions": captured.get("regions", {}),
@@ -493,13 +471,13 @@ def _generate_crazy_time_config(game_name: str, captured: dict) -> dict:
     }
 
 
-def _generate_diamond_wild_config(game_name: str, captured: dict) -> dict:
+def _generate_diamond_wild_config(game: str, captured: dict) -> dict:
     """Generate Diamond Wild YAML config."""
     return {
         "game": {
-            "name": game_name.replace("_", " ").title(),
+            "name": game.replace("_", " ").title(),
             "platform": "draftkings",
-            "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
+            "asset_dir": captured.get("asset_dir", f"assets/{game}/"),
         },
         "elements": captured.get("elements", {}),
         "regions": captured.get("regions", {}),
@@ -513,7 +491,7 @@ def _generate_diamond_wild_config(game_name: str, captured: dict) -> dict:
     }
 
 
-def _generate_infinite_blackjack_config(game_name: str, captured: dict) -> dict:
+def _generate_infinite_blackjack_config(game: str, captured: dict) -> dict:
     """Generate Infinite Blackjack YAML config."""
     elements = captured.get("elements", {})
     positions = captured.get("positions", {})
@@ -523,9 +501,9 @@ def _generate_infinite_blackjack_config(game_name: str, captured: dict) -> dict:
 
     return {
         "game": {
-            "name": game_name.replace("_", " ").title(),
+            "name": game.replace("_", " ").title(),
             "platform": "fanduel",
-            "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
+            "asset_dir": captured.get("asset_dir", f"assets/{game}/"),
         },
         "elements": elements,
         "regions": captured.get("regions", {}),
@@ -539,20 +517,20 @@ def _generate_infinite_blackjack_config(game_name: str, captured: dict) -> dict:
     }
 
 
-def update_single_asset(game_name: str, element_name: str) -> None:
+def update_single_asset(game: str, element_name: str) -> None:
     """Re-capture a single asset for an existing game."""
-    asset_dir = PROJECT_ROOT / "assets" / game_name
-    config_path = PROJECT_ROOT / "config" / "games" / f"{game_name}.yaml"
+    asset_dir = PROJECT_ROOT / "assets" / game
+    config_path = PROJECT_ROOT / "config" / "games" / f"{game}.yaml"
 
     if not config_path.exists():
         print(f"Config not found: {config_path}")
-        print(f"Run a full capture first: python3 tools/capture.py --game {game_name}")
+        print(f"Run a full capture first: python3 tools/capture.py --game {game}")
         sys.exit(1)
 
     asset_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*60}")
-    print(f"  Updating asset '{element_name}' for: {game_name}")
+    print(f"  Updating asset '{element_name}' for: {game}")
     print(f"{'='*60}")
     print()
     print("  Make sure the game is open and visible in Chrome.")
@@ -595,15 +573,15 @@ def update_single_asset(game_name: str, element_name: str) -> None:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     print(f"    Config updated: {config_path}")
 
-    print(f"\n  Done! Test with: python3 tools/capture.py --game {game_name} --test\n")
+    print(f"\n  Done! Test with: python3 tools/capture.py --game {game} --test\n")
 
 
-def test_assets(game_name: str) -> None:
+def test_assets(game: str) -> None:
     """Test if all captured assets can be found on the current screen."""
-    asset_dir = PROJECT_ROOT / "assets" / game_name
+    asset_dir = PROJECT_ROOT / "assets" / game
     config_dir = PROJECT_ROOT / "config" / "games"
 
-    config_path = config_dir / f"{game_name}.yaml"
+    config_path = config_dir / f"{game}.yaml"
     if not config_path.exists():
         print(f"Config not found: {config_path}")
         sys.exit(1)
@@ -612,7 +590,7 @@ def test_assets(game_name: str) -> None:
         config = yaml.safe_load(f)
 
     print(f"\n{'='*60}")
-    print(f"  Testing assets for: {game_name}")
+    print(f"  Testing assets for: {game}")
     print(f"{'='*60}\n")
     print("  Make sure the game is open and visible in Chrome.\n")
 
@@ -652,16 +630,6 @@ def test_assets(game_name: str) -> None:
     print(f"\n  Result: {found}/{total} elements found on screen")
 
 
-def _resolve_game(game_name: str) -> str | None:
-    """Auto-detect game from game name."""
-    detected = detect_game(game_name)
-    if detected:
-        print(f"  Auto-detected game: {detected}")
-        return detected
-
-    return None
-
-
 # ── Interactive mode functions ────────────────────────────────────────────
 
 # Shared keybindings: arrow keys (default) + vim j/k
@@ -681,16 +649,6 @@ def interactive_select_game() -> str:
         choices=choices,
         keybindings=VIM_NAV_KEYBINDINGS,
     ).execute()
-
-
-def interactive_enter_game_name(game: str, default: str = "") -> str:
-    """Prompt to customize the game name, with the game pre-filled."""
-    return inquirer.text(
-        message="Game name:",
-        default=default or f"{game}_",
-        validate=lambda val: len(val.strip()) > 0,
-        invalid_message="Game name cannot be empty.",
-    ).execute().strip()
 
 
 def interactive_select_assets(game: str) -> list[tuple[str, str]]:
@@ -753,23 +711,22 @@ def interactive_select_assets(game: str) -> list[tuple[str, str]]:
     ).execute()
 
 
-def interactive_select_update_assets(game_name: str) -> list[str]:
+def interactive_select_update_assets(game: str) -> list[str]:
     """
     Arrow-key checkbox to select which existing assets to re-capture.
 
     Reads the game's config to find all current elements and presents
     them as a selectable list.
     """
-    config_path = PROJECT_ROOT / "config" / "games" / f"{game_name}.yaml"
+    config_path = PROJECT_ROOT / "config" / "games" / f"{game}.yaml"
     if not config_path.exists():
         print(f"Config not found: {config_path}")
-        print(f"Run a full capture first: python3 tools/capture.py --game {game_name}")
+        print(f"Run a full capture first: python3 tools/capture.py --game {game}")
         sys.exit(1)
 
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    game = detect_game(game_name)
     defs = GAME_DEFS.get(game, {})
 
     # Build a lookup of all known asset descriptions for this game
@@ -784,7 +741,7 @@ def interactive_select_update_assets(game_name: str) -> list[str]:
     # Existing elements from config
     elements = config.get("elements", {})
     if not elements:
-        print(f"No elements found in config for '{game_name}'.")
+        print(f"No elements found in config for '{game}'.")
         sys.exit(1)
 
     choices = []
@@ -815,7 +772,6 @@ def interactive_select_update_assets(game_name: str) -> list[str]:
 
 
 def capture_selected_elements(
-    game_name: str,
     game: str,
     selected_assets: list[tuple[str, str]],
 ) -> dict:
@@ -823,14 +779,13 @@ def capture_selected_elements(
     Capture only the user-selected assets for a game.
 
     Args:
-        game_name: Name for the game (used for directory naming).
         game: Game key from GAME_DEFS.
         selected_assets: List of (category, name) tuples from the interactive picker.
 
     Returns:
         Dict with 'elements', 'regions', 'positions', and 'asset_dir' keys.
     """
-    asset_dir = PROJECT_ROOT / "assets" / game_name
+    asset_dir = PROJECT_ROOT / "assets" / game
     asset_dir.mkdir(parents=True, exist_ok=True)
 
     defs = GAME_DEFS[game]
@@ -857,7 +812,7 @@ def capture_selected_elements(
     sel_positions = [name for cat, name in selected_assets if cat == "position"]
 
     print(f"\n{'='*60}")
-    print(f"  Capturing assets for: {game_name}")
+    print(f"  Capturing assets for: {game}")
     print(f"  Asset directory: {asset_dir}")
     print(f"{'='*60}")
     print()
@@ -918,44 +873,42 @@ def capture_selected_elements(
         "elements": captured_elements,
         "regions": captured_regions,
         "positions": captured_positions,
-        "asset_dir": f"assets/{game_name}/",
+        "asset_dir": f"assets/{game}/",
     }
 
 
 def interactive_new_game() -> None:
     """
-    Full interactive flow: select game, name it, pick assets, capture.
+    Full interactive flow: select game, pick assets, capture.
 
     Steps:
       1. Select game (arrow-key list)
-      2. Enter game name (text, pre-filled with game prefix)
-      3. Select assets to capture (checkbox)
-      4. Capture and generate config
+      2. Select assets to capture (checkbox)
+      3. Capture and generate config
     """
     game = interactive_select_game()
-    game_name = interactive_enter_game_name(game)
     selected_assets = interactive_select_assets(game)
 
     init_retina_scale()
-    captured = capture_selected_elements(game_name, game, selected_assets)
-    config_path = generate_yaml_config(game_name, game, captured)
+    captured = capture_selected_elements(game, selected_assets)
+    config_path = generate_yaml_config(game, captured)
 
     print(f"\n{'='*60}")
     print(f"  Done! Next steps:")
     print(f"  1. Review config: {config_path}")
-    print(f"  2. Test: python3 tools/capture.py --game {game_name} --test")
+    print(f"  2. Test: python3 tools/capture.py --game {game} --test")
     print(f"  3. Run: python3 main.py --config {config_path} --duration 60")
     print(f"{'='*60}\n")
 
 
-def interactive_update_game(game_name: str) -> None:
+def interactive_update_game(game: str) -> None:
     """Interactive flow: select which assets to re-capture for an existing game."""
-    selected = interactive_select_update_assets(game_name)
+    selected = interactive_select_update_assets(game)
 
     init_retina_scale()
 
     for element_name in selected:
-        update_single_asset(game_name, element_name)
+        update_single_asset(game, element_name)
 
 
 def main():
@@ -963,7 +916,9 @@ def main():
         description="Capture game assets and generate YAML configs"
     )
     parser.add_argument(
-        "--game", help="Game name (used for directory and config naming)"
+        "--game",
+        choices=KNOWN_GAMES,
+        help="Game to capture assets for",
     )
     parser.add_argument(
         "--test",
@@ -1009,14 +964,9 @@ def main():
         else:
             update_single_asset(args.game, args.update_asset)
     elif args.reset:
-        game = _resolve_game(args.game)
         reset_game(args.game)
-        if not game:
-            print(f"Error: Could not detect game from '{args.game}'.")
-            print(f"  Available games: {', '.join(KNOWN_GAMES)}")
-            sys.exit(1)
-        captured = capture_elements(args.game, game)
-        config_path = generate_yaml_config(args.game, game, captured)
+        captured = capture_elements(args.game)
+        config_path = generate_yaml_config(args.game, captured)
         print(f"\n{'='*60}")
         print(f"  Re-captured! Config: {config_path}")
         print(f"  Run: python3 main.py --config {config_path} --duration 60")
@@ -1024,14 +974,8 @@ def main():
     elif args.test:
         test_assets(args.game)
     else:
-        game = _resolve_game(args.game)
-        if not game:
-            print(f"Error: Could not detect game from '{args.game}'.")
-            print(f"  Available games: {', '.join(KNOWN_GAMES)}")
-            sys.exit(1)
-
-        captured = capture_elements(args.game, game)
-        config_path = generate_yaml_config(args.game, game, captured)
+        captured = capture_elements(args.game)
+        config_path = generate_yaml_config(args.game, captured)
 
         print(f"\n{'='*60}")
         print(f"  Done! Next steps:")

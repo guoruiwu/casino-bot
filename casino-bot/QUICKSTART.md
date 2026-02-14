@@ -24,7 +24,7 @@ Grant permissions to your terminal app:
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 tools/capture.py --game crazy_time_dk
+python3 tools/capture.py --game crazy_time
 ```
 
 4. It will ask for 2 things:
@@ -38,7 +38,7 @@ python3 tools/capture.py --game crazy_time_dk
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 tools/capture.py --game GAME_NAME
+python3 tools/capture.py --game slot
 ```
 
 3. It will ask you to capture the spin button (select corners)
@@ -79,7 +79,7 @@ python3 tools/capture.py --game diamond_wild --update-asset spin_button
 python3 tools/capture.py --game diamond_wild --update-asset dismiss_popup
 
 # Re-capture the spin button for a slot
-python3 tools/capture.py --game my_slot_dk --update-asset spin_button
+python3 tools/capture.py --game slot --update-asset spin_button
 ```
 
 This saves the new screenshot and adds the element to the YAML config if it's not already there. No need to re-run the full capture.
@@ -99,10 +99,10 @@ cd /Users/guoruiwu/Github/casino-bot
 python3 tools/capture.py --game diamond_wild --update-asset reality_check
 
 # For Crazy Time
-python3 tools/capture.py --game crazy_time_dk --update-asset reality_check
+python3 tools/capture.py --game crazy_time --update-asset reality_check
 
 # For any slot
-python3 tools/capture.py --game GAME_NAME --update-asset reality_check
+python3 tools/capture.py --game slot --update-asset reality_check
 ```
 
 It will ask for 2 things:
@@ -123,7 +123,7 @@ The bot checks for this popup before every action. If it appears, it clicks the 
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 main.py --config config/games/crazy_time_dk.yaml --duration 60
+python3 main.py --config config/games/crazy_time.yaml --duration 60
 ```
 
 ### Slot Game
@@ -134,7 +134,7 @@ python3 main.py --config config/games/crazy_time_dk.yaml --duration 60
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 main.py --config config/games/GAME_NAME.yaml --duration 60
+python3 main.py --config config/games/slot.yaml --duration 60
 ```
 
 ### Diamond Wild
@@ -163,7 +163,7 @@ If the game UI changed or your positions are wrong:
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 tools/capture.py --game crazy_time_dk --reset
+python3 tools/capture.py --game crazy_time --reset
 ```
 
 This deletes the old screenshots and config, then walks you through capturing again.
@@ -171,7 +171,7 @@ This deletes the old screenshots and config, then walks you through capturing ag
 To just delete without re-capturing:
 
 ```bash
-python3 tools/capture.py --game crazy_time_dk --reset
+python3 tools/capture.py --game crazy_time --reset
 ```
 
 ---
@@ -180,14 +180,14 @@ python3 tools/capture.py --game crazy_time_dk --reset
 
 | What | Command |
 |------|---------|
-| Set up Crazy Time | `python3 tools/capture.py --game crazy_time_dk` |
-| Set up a slot | `python3 tools/capture.py --game GAME_NAME` |
+| Set up Crazy Time | `python3 tools/capture.py --game crazy_time` |
+| Set up a slot | `python3 tools/capture.py --game slot` |
 | Set up Diamond Wild | `python3 tools/capture.py --game diamond_wild` |
-| Update one asset | `python3 tools/capture.py --game GAME_NAME --update-asset ELEMENT` |
-| Set up reality check | `python3 tools/capture.py --game GAME_NAME --update-asset reality_check` |
-| Run Crazy Time 60 min | `python3 main.py --config config/games/crazy_time_dk.yaml --duration 60` |
-| Run a slot 60 min | `python3 main.py --config config/games/GAME_NAME.yaml --duration 60` |
+| Update one asset | `python3 tools/capture.py --game slot --update-asset ELEMENT` |
+| Set up reality check | `python3 tools/capture.py --game slot --update-asset reality_check` |
+| Run Crazy Time 60 min | `python3 main.py --config config/games/crazy_time.yaml --duration 60` |
+| Run a slot 60 min | `python3 main.py --config config/games/slot.yaml --duration 60` |
 | Run Diamond Wild 60 min | `python3 main.py --config config/games/diamond_wild.yaml --duration 60` |
-| Test assets on screen | `python3 tools/capture.py --game GAME_NAME --test` |
-| Reset & re-capture | `python3 tools/capture.py --game GAME_NAME --reset` |
+| Test assets on screen | `python3 tools/capture.py --game slot --test` |
+| Reset & re-capture | `python3 tools/capture.py --game slot --reset` |
 | Stop | Ctrl+C |
