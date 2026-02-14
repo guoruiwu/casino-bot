@@ -424,6 +424,16 @@ class InfiniteBlackjackGame(BaseGame):
 
     # ── OCR Readers ──────────────────────────────────────────────────────
 
+    @staticmethod
+    def _adjust_region(region: dict, delta: int) -> dict:
+        """Return a copy of *region* with x/y shifted by -delta and w/h grown by 2*delta."""
+        return {
+            "x": max(0, region["x"] - delta),
+            "y": max(0, region["y"] - delta),
+            "w": region["w"] + 2 * delta,
+            "h": region["h"] + 2 * delta,
+        }
+
     # Known OCR misreads for digits in the player total region.
     # Applied as a safety net after Tesseract (even with a whitelist,
     # misreads can still occur on stylised game fonts).
@@ -524,8 +534,9 @@ class InfiniteBlackjackGame(BaseGame):
         Handles soft hands where the display shows slash notation (e.g. "11/21"
         meaning the hand is soft 21).
 
-        Tries OCR with inversion first (dark-text-on-white), then falls back
-        to without inversion if the first attempt fails validation.
+        Tries OCR with three region variants (original, widened +2px, narrowed
+        -2px).  For each variant, tries inversion first (dark-text-on-white),
+        then without inversion.
 
         Returns:
             Tuple of (total, is_soft), or None if OCR failed.
@@ -536,32 +547,45 @@ class InfiniteBlackjackGame(BaseGame):
         if not region:
             return None
 
-        # Try with inversion first, then without
-        for invert in (True, False):
-            text = read_text(region, whitelist="0123456789/", invert=invert)
-            result = self._parse_player_total(text)
-            if result is not None:
-                total, is_soft = result
-                soft_label = "soft, " if is_soft else "hard, "
-                inv_label = "inverted" if invert else "non-inverted"
-                logger.debug(
-                    f"Player total: {total} ({soft_label}{inv_label}, raw: '{text}')"
-                )
-                self._save_ocr_snapshot(
-                    region, "player_total",
-                    ocr_text=text, parsed_value=result,
-                    success=True, invert=invert,
-                )
-                return result
-            if text:
-                inv_label = "inverted" if invert else "non-inverted"
-                logger.debug(
-                    f"Player total OCR attempt ({inv_label}) failed "
-                    f"validation: '{text}'"
-                )
+        # Region variants: original, widened (+2px each edge), narrowed (-2px each edge)
+        region_variants = [
+            ("original", region),
+            ("widened+2", self._adjust_region(region, 2)),
+            ("narrowed-2", self._adjust_region(region, -2)),
+        ]
+
+        for variant_label, variant_region in region_variants:
+            for invert in (True, False):
+                text = read_text(variant_region, whitelist="0123456789/", invert=invert)
+                result = self._parse_player_total(text)
+                if result is not None:
+                    total, is_soft = result
+                    soft_label = "soft, " if is_soft else "hard, "
+                    inv_label = "inverted" if invert else "non-inverted"
+                    if variant_label != "original":
+                        logger.debug(
+                            f"Player total: {total} ({soft_label}{inv_label}, "
+                            f"region: {variant_label}, raw: '{text}')"
+                        )
+                    else:
+                        logger.debug(
+                            f"Player total: {total} ({soft_label}{inv_label}, raw: '{text}')"
+                        )
+                    self._save_ocr_snapshot(
+                        variant_region, "player_total",
+                        ocr_text=text, parsed_value=result,
+                        success=True, invert=invert,
+                    )
+                    return result
+                if text:
+                    inv_label = "inverted" if invert else "non-inverted"
+                    logger.debug(
+                        f"Player total OCR attempt ({inv_label}, "
+                        f"region: {variant_label}) failed validation: '{text}'"
+                    )
 
         logger.warning(
-            f"Could not read player total after trying both inversion modes "
+            f"Could not read player total after trying all region variants "
             f"(region: {region})"
         )
         self._save_ocr_snapshot(
@@ -598,8 +622,9 @@ class InfiniteBlackjackGame(BaseGame):
         """
         Read the dealer's upcard total via OCR.
 
-        Tries OCR with inversion first (dark-text-on-white), then falls back
-        to without inversion if the first attempt fails validation.
+        Tries OCR with three region variants (original, widened +2px, narrowed
+        -2px).  For each variant, tries inversion first (dark-text-on-white),
+        then without inversion.
 
         Returns:
             Integer in [2, 11] (where 11 = Ace), or None if OCR failed.
@@ -608,28 +633,43 @@ class InfiniteBlackjackGame(BaseGame):
         if not region:
             return None
 
-        # Try with inversion first, then without
-        for invert in (True, False):
-            text = read_text(region, whitelist="0123456789", invert=invert)
-            result = self._parse_dealer_total(text)
-            if result is not None:
-                inv_label = "inverted" if invert else "non-inverted"
-                logger.debug(f"Dealer upcard: {result} ({inv_label}, raw: '{text}')")
-                self._save_ocr_snapshot(
-                    region, "dealer_total",
-                    ocr_text=text, parsed_value=result,
-                    success=True, invert=invert,
-                )
-                return result
-            if text:
-                inv_label = "inverted" if invert else "non-inverted"
-                logger.debug(
-                    f"Dealer total OCR attempt ({inv_label}) failed "
-                    f"validation: '{text}'"
-                )
+        # Region variants: original, widened (+2px each edge), narrowed (-2px each edge)
+        region_variants = [
+            ("original", region),
+            ("widened+2", self._adjust_region(region, 2)),
+            ("narrowed-2", self._adjust_region(region, -2)),
+        ]
+
+        for variant_label, variant_region in region_variants:
+            for invert in (True, False):
+                text = read_text(variant_region, whitelist="0123456789", invert=invert)
+                result = self._parse_dealer_total(text)
+                if result is not None:
+                    inv_label = "inverted" if invert else "non-inverted"
+                    if variant_label != "original":
+                        logger.debug(
+                            f"Dealer upcard: {result} ({inv_label}, "
+                            f"region: {variant_label}, raw: '{text}')"
+                        )
+                    else:
+                        logger.debug(
+                            f"Dealer upcard: {result} ({inv_label}, raw: '{text}')"
+                        )
+                    self._save_ocr_snapshot(
+                        variant_region, "dealer_total",
+                        ocr_text=text, parsed_value=result,
+                        success=True, invert=invert,
+                    )
+                    return result
+                if text:
+                    inv_label = "inverted" if invert else "non-inverted"
+                    logger.debug(
+                        f"Dealer total OCR attempt ({inv_label}, "
+                        f"region: {variant_label}) failed validation: '{text}'"
+                    )
 
         logger.warning(
-            f"Could not read dealer total after trying both inversion modes "
+            f"Could not read dealer total after trying all region variants "
             f"(region: {region})"
         )
         self._save_ocr_snapshot(

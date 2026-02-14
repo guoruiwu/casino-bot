@@ -11,23 +11,23 @@ elements:
   reality_check: reality_check.png
 regions:
   balance:
-    x: 109
-    y: 769
-    w: 46
-    h: 18
+    x: 107
+    y: 770
+    w: 48
+    h: 17
   player_total:
-    x: 544
+    x: 543
     y: 713
-    w: 18
-    h: 14
+    w: 19
+    h: 12
   dealer_total:
     x: 367
     y: 562
     w: 18
-    h: 14
+    h: 10
 bet_spot:
-  x: 598
-  y: 705
+  x: 602
+  y: 700
 settings:
   confidence: 0.8
   action_delay:
