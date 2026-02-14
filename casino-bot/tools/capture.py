@@ -27,9 +27,18 @@ Usage:
   # Reset and re-capture everything
   python3 tools/capture.py --game slot --reset
 
+  # Snapshot mode: screenshot each game state first, then crop from frozen images
+  # (recommended for live-dealer games like Infinite Blackjack)
+  python3 tools/capture.py --game infinite_blackjack --snapshot
+
 How it works:
   1. Takes a screenshot of your current screen
   2. For each required element, you position your mouse on the corners and press Enter
+  3. Saves cropped PNGs and generates a starter YAML config
+
+  Snapshot mode (--snapshot):
+  1. Prompts you to get the game into each required state, takes a screenshot of each
+  2. Opens a Tkinter window where you draw rectangles to crop assets from frozen images
   3. Saves cropped PNGs and generates a starter YAML config
 
 Only captures what's actually needed — most games need just 2-3 elements.
@@ -162,6 +171,33 @@ GAME_DEFS = {
 }
 
 KNOWN_GAMES = list(GAME_DEFS.keys())
+
+# ── State groups for snapshot capture mode ────────────────────────────────
+# Maps games (with multiple live states) to a list of state groups.
+# Each group describes one game state that the user needs to screenshot,
+# and which elements/regions/positions belong to that state.
+# Games not listed here don't need snapshot mode (e.g. slots).
+
+GAME_STATE_GROUPS: dict[str, list[dict]] = {
+    "infinite_blackjack": [
+        {
+            "state": "Betting Phase",
+            "hint": "Wait for 'PLACE YOUR BETS' to appear, then press Enter.",
+            "elements": ["betting_open", "chip_1"],
+            "optional_elements": ["repeat_button"],
+            "regions": ["balance"],
+            "positions": ["bet_spot"],
+        },
+        {
+            "state": "Decision Phase",
+            "hint": "Wait for HIT/STAND buttons to appear, then press Enter.",
+            "elements": ["hit_button", "stand_button", "double_button"],
+            "optional_elements": [],
+            "regions": ["player_total", "dealer_upcard"],
+            "positions": [],
+        },
+    ],
+}
 
 
 def print_game_help(game: str) -> None:
@@ -630,6 +666,584 @@ def test_assets(game: str) -> None:
     print(f"\n  Result: {found}/{total} elements found on screen")
 
 
+# ── Snapshot capture mode ─────────────────────────────────────────────────
+# Takes screenshots of each game state first, then lets the user crop
+# assets from frozen images using a Tkinter GUI overlay.
+
+
+class RegionSelector:
+    """
+    OpenCV-based GUI for selecting regions/positions from a screenshot image.
+
+    Displays the screenshot and lets the user:
+      - Draw rectangles (click-and-drag) to select template elements or OCR regions
+      - Single-click to select click positions
+      - Press 's' to skip the current element
+      - Press 'u' to undo the last selection
+      - Press 'q' or Escape to finish/quit
+    """
+
+    WINDOW_NAME = "Snapshot Capture — Region Selector"
+
+    def __init__(
+        self,
+        screenshot_2x: np.ndarray,
+        tasks: list[dict],
+        asset_dir: Path,
+    ):
+        """
+        Args:
+            screenshot_2x: Full-resolution (2x Retina) screenshot as BGR numpy array.
+            tasks: List of dicts, each with keys:
+                - name: str (element name)
+                - description: str
+                - category: "element" | "region" | "position"
+            asset_dir: Directory to save cropped element PNGs.
+        """
+        self.screenshot_2x = screenshot_2x
+        self.tasks = list(tasks)
+        self.asset_dir = asset_dir
+
+        self.results: dict[str, dict] = {}  # name -> result data
+        self.task_idx = 0
+
+        # Display at 1x logical size (half of Retina 2x)
+        h_2x, w_2x = screenshot_2x.shape[:2]
+        self.display_w = w_2x // 2
+        self.display_h = h_2x // 2
+        self.scale = 2  # display-to-image scale factor
+
+        # Prepare the 1x display image
+        self.base_display = cv2.resize(
+            screenshot_2x,
+            (self.display_w, self.display_h),
+            interpolation=cv2.INTER_AREA,
+        )
+
+        # Drawing state
+        self._drawing = False
+        self._start_x: int = 0
+        self._start_y: int = 0
+        self._current_x: int = 0
+        self._current_y: int = 0
+
+        # Overlay history: list of (type, data) for drawn markers
+        self._overlays: list[tuple[str, tuple]] = []
+
+    def run(self) -> dict[str, dict]:
+        """Run the selector and return results when all tasks are done."""
+        cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+        cv2.setMouseCallback(self.WINDOW_NAME, self._mouse_callback)
+
+        self._redraw()
+
+        while True:
+            key = cv2.waitKey(30) & 0xFF
+
+            if key == ord("s"):
+                # Skip current task
+                self._on_skip()
+            elif key == ord("u"):
+                # Undo last selection
+                self._on_undo()
+            elif key == ord("q") or key == 27:  # q or Escape
+                break
+
+            # Check if all tasks are done
+            if self.task_idx >= len(self.tasks):
+                # Show "all done" for a moment, then close
+                self._redraw()
+                cv2.waitKey(800)
+                break
+
+        cv2.destroyWindow(self.WINDOW_NAME)
+        return self.results
+
+    # ── Drawing ──────────────────────────────────────────────────────────
+
+    def _redraw(self) -> None:
+        """Redraw the display image with overlays and prompt text."""
+        display = self.base_display.copy()
+
+        # Draw all committed overlays
+        for kind, data in self._overlays:
+            if kind == "rect":
+                x1, y1, x2, y2 = data
+                cv2.rectangle(display, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            elif kind == "point":
+                cx, cy = data
+                cv2.circle(display, (cx, cy), 6, (0, 0, 255), 2)
+
+        # Draw in-progress rectangle
+        if self._drawing:
+            x1 = min(self._start_x, self._current_x)
+            y1 = min(self._start_y, self._current_y)
+            x2 = max(self._start_x, self._current_x)
+            y2 = max(self._start_y, self._current_y)
+            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        # Draw prompt bar at the top
+        task = self._current_task()
+        if task is None:
+            prompt = "All done! Press any key to close."
+        else:
+            n = self.task_idx + 1
+            total = len(self.tasks)
+            if task["category"] == "position":
+                action = "CLICK on"
+            else:
+                action = "DRAW rectangle around"
+            prompt = (
+                f"({n}/{total}) {action}: {task['name']} — {task['description']}  "
+                f"[s=skip, u=undo, q=quit]"
+            )
+
+        # Draw a dark banner at the top for readability
+        banner_h = 40
+        cv2.rectangle(display, (0, 0), (self.display_w, banner_h), (30, 30, 30), -1)
+        # Truncate prompt if too long for display
+        cv2.putText(
+            display,
+            prompt,
+            (10, 26),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+
+        cv2.imshow(self.WINDOW_NAME, display)
+
+    # ── Task navigation ──────────────────────────────────────────────────
+
+    def _current_task(self) -> dict | None:
+        if self.task_idx < len(self.tasks):
+            return self.tasks[self.task_idx]
+        return None
+
+    def _is_position_mode(self) -> bool:
+        task = self._current_task()
+        return task is not None and task["category"] == "position"
+
+    def _advance(self) -> None:
+        """Move to the next task."""
+        self.task_idx += 1
+        self._drawing = False
+        self._redraw()
+
+    # ── Mouse callback ───────────────────────────────────────────────────
+
+    def _mouse_callback(self, event, x, y, flags, param) -> None:
+        task = self._current_task()
+        if task is None:
+            return
+
+        if self._is_position_mode():
+            # Single click — record position on mouse-up
+            if event == cv2.EVENT_LBUTTONDOWN:
+                self.results[task["name"]] = {
+                    "category": "position",
+                    "x": x,
+                    "y": y,
+                }
+                self._overlays.append(("point", (x, y)))
+                self._advance()
+            return
+
+        # Rectangle mode
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self._drawing = True
+            self._start_x = x
+            self._start_y = y
+            self._current_x = x
+            self._current_y = y
+
+        elif event == cv2.EVENT_MOUSEMOVE and self._drawing:
+            self._current_x = x
+            self._current_y = y
+            self._redraw()
+
+        elif event == cv2.EVENT_LBUTTONUP and self._drawing:
+            self._drawing = False
+            x1 = min(self._start_x, x)
+            y1 = min(self._start_y, y)
+            x2 = max(self._start_x, x)
+            y2 = max(self._start_y, y)
+
+            # Reject tiny selections
+            if (x2 - x1) < 4 or (y2 - y1) < 4:
+                self._redraw()
+                return
+
+            # Crop from the full-res 2x image
+            s = self.scale
+            crop = self.screenshot_2x[y1 * s : y2 * s, x1 * s : x2 * s]
+
+            if task["category"] == "element":
+                filename = f"{task['name']}.png"
+                filepath = self.asset_dir / filename
+                cv2.imwrite(str(filepath), crop)
+                self.results[task["name"]] = {
+                    "category": "element",
+                    "filename": filename,
+                }
+            elif task["category"] == "region":
+                self.results[task["name"]] = {
+                    "category": "region",
+                    "x": x1,
+                    "y": y1,
+                    "w": x2 - x1,
+                    "h": y2 - y1,
+                }
+
+            self._overlays.append(("rect", (x1, y1, x2, y2)))
+            self._advance()
+
+    # ── Button handlers ──────────────────────────────────────────────────
+
+    def _on_skip(self) -> None:
+        if self._current_task() is not None:
+            self._overlays.append(("skip", ()))  # placeholder for undo tracking
+            self._advance()
+
+    def _on_undo(self) -> None:
+        if self.task_idx == 0:
+            return
+        # Go back one step
+        self.task_idx -= 1
+        self._drawing = False
+        task = self._current_task()
+        if task and task["name"] in self.results:
+            del self.results[task["name"]]
+        # Remove last overlay
+        if self._overlays:
+            self._overlays.pop()
+        self._redraw()
+
+
+def _build_task_list(
+    game: str,
+    selected_names: set[str] | None = None,
+) -> list[dict]:
+    """
+    Build an ordered list of tasks for the RegionSelector from GAME_DEFS.
+
+    If *selected_names* is provided, only include tasks whose name is in the set.
+    Returns a list of dicts with keys: name, description, category.
+    """
+    defs = GAME_DEFS[game]
+
+    # Build description lookups
+    elem_desc: dict[str, str] = {}
+    for name, desc, *_ in defs["elements"]:
+        elem_desc[name] = desc
+    for name, desc in defs["optional_elements"]:
+        elem_desc[name] = desc
+    for name, desc in COMMON_OPTIONAL_ELEMENTS:
+        elem_desc[name] = desc
+
+    region_desc = {name: desc for name, desc in defs["regions"]}
+    position_desc = {name: desc for name, desc in defs["positions"]}
+
+    tasks: list[dict] = []
+
+    # Elements
+    for name, desc, *_ in defs["elements"]:
+        if selected_names is None or name in selected_names:
+            tasks.append({"name": name, "description": desc, "category": "element"})
+    for name, desc in defs["optional_elements"]:
+        if selected_names is not None and name in selected_names:
+            tasks.append({"name": name, "description": desc, "category": "element"})
+    for name, desc in COMMON_OPTIONAL_ELEMENTS:
+        if selected_names is not None and name in selected_names:
+            tasks.append({"name": name, "description": desc, "category": "element"})
+
+    # Regions
+    for name, desc in defs["regions"]:
+        if selected_names is None or name in selected_names:
+            tasks.append({"name": name, "description": desc, "category": "region"})
+
+    # Positions
+    for name, desc in defs["positions"]:
+        if selected_names is None or name in selected_names:
+            tasks.append({"name": name, "description": desc, "category": "position"})
+
+    return tasks
+
+
+def _collect_snapshots(
+    game: str,
+    state_groups: list[dict],
+    needed_names: set[str] | None = None,
+) -> dict[str, np.ndarray]:
+    """
+    Phase 1: Prompt the user to get the game into each required state and
+    take a screenshot for each one.
+
+    Args:
+        game: Game key.
+        state_groups: The GAME_STATE_GROUPS list for this game.
+        needed_names: If provided, only collect snapshots for states that
+                      contain at least one needed asset.
+
+    Returns:
+        Dict mapping state name -> 2x Retina screenshot (BGR numpy array).
+    """
+    # Filter to only states that contain needed assets
+    if needed_names is not None:
+        filtered = []
+        for group in state_groups:
+            all_names = (
+                group.get("elements", [])
+                + group.get("optional_elements", [])
+                + group.get("regions", [])
+                + group.get("positions", [])
+            )
+            if any(n in needed_names for n in all_names):
+                filtered.append(group)
+        state_groups = filtered
+
+    if not state_groups:
+        return {}
+
+    print(f"\n{'='*60}")
+    print(f"  Snapshot mode for: {game}")
+    print(f"{'='*60}")
+    print()
+    print("  You need screenshots from these game states:")
+    for i, group in enumerate(state_groups, 1):
+        all_names = (
+            group.get("elements", [])
+            + group.get("optional_elements", [])
+            + group.get("regions", [])
+            + group.get("positions", [])
+        )
+        # Filter to only needed names if applicable
+        if needed_names is not None:
+            all_names = [n for n in all_names if n in needed_names]
+        names_str = ", ".join(all_names)
+        print(f"    {i}. {group['state']}  — {names_str}")
+    print()
+    print("  Make sure the game is open and visible in Chrome.")
+    print()
+
+    snapshots: dict[str, np.ndarray] = {}
+
+    for i, group in enumerate(state_groups, 1):
+        state_name = group["state"]
+        hint = group.get("hint", "Press Enter to take a screenshot.")
+        print(f"  Step {i}/{len(state_groups)}: {state_name}")
+        print(f"    {hint}")
+        input("    > ")
+
+        screenshot = take_screenshot()
+        snapshots[state_name] = screenshot
+        print(f"    Screenshot captured for: {state_name}")
+        print()
+
+    print("  All snapshots collected!\n")
+    return snapshots
+
+
+def _tasks_for_state(
+    game: str,
+    state_group: dict,
+    selected_names: set[str] | None = None,
+) -> list[dict]:
+    """
+    Build RegionSelector task dicts for a single state group.
+
+    Args:
+        game: Game key.
+        state_group: One entry from GAME_STATE_GROUPS.
+        selected_names: If provided, only include tasks whose name is in the set.
+    """
+    defs = GAME_DEFS[game]
+
+    # Build description lookups
+    elem_desc: dict[str, str] = {}
+    for name, desc, *_ in defs["elements"]:
+        elem_desc[name] = desc
+    for name, desc in defs["optional_elements"]:
+        elem_desc[name] = desc
+    for name, desc in COMMON_OPTIONAL_ELEMENTS:
+        elem_desc[name] = desc
+    region_desc = {name: desc for name, desc in defs["regions"]}
+    position_desc = {name: desc for name, desc in defs["positions"]}
+
+    tasks: list[dict] = []
+
+    for name in state_group.get("elements", []):
+        if selected_names is None or name in selected_names:
+            desc = elem_desc.get(name, "")
+            tasks.append({"name": name, "description": desc, "category": "element"})
+
+    for name in state_group.get("optional_elements", []):
+        if selected_names is None or name in selected_names:
+            desc = elem_desc.get(name, "")
+            tasks.append({"name": name, "description": desc, "category": "element"})
+
+    for name in state_group.get("regions", []):
+        if selected_names is None or name in selected_names:
+            desc = region_desc.get(name, "")
+            tasks.append({"name": name, "description": desc, "category": "region"})
+
+    for name in state_group.get("positions", []):
+        if selected_names is None or name in selected_names:
+            desc = position_desc.get(name, "")
+            tasks.append({"name": name, "description": desc, "category": "position"})
+
+    return tasks
+
+
+def snapshot_capture(game: str) -> dict:
+    """
+    Full snapshot capture workflow for a game (CLI mode — captures all assets).
+
+    Phase 1: Collect a screenshot for each game state.
+    Phase 2: Open a Tkinter RegionSelector for each screenshot to crop assets.
+
+    Returns:
+        Dict with 'elements', 'regions', 'positions', and 'asset_dir' keys
+        (same format as capture_elements()).
+    """
+    state_groups = GAME_STATE_GROUPS.get(game)
+    if not state_groups:
+        print(f"\n  No state groups defined for '{game}' — falling back to live mode.\n")
+        return capture_elements(game)
+
+    asset_dir = PROJECT_ROOT / "assets" / game
+    asset_dir.mkdir(parents=True, exist_ok=True)
+
+    # Phase 1: Collect snapshots
+    snapshots = _collect_snapshots(game, state_groups)
+
+    # Phase 2: Open RegionSelector for each state's screenshot
+    captured_elements: dict[str, str] = {}
+    captured_regions: dict[str, dict] = {}
+    captured_positions: dict[str, dict] = {}
+
+    for group in state_groups:
+        state_name = group["state"]
+        screenshot = snapshots.get(state_name)
+        if screenshot is None:
+            continue
+
+        tasks = _tasks_for_state(game, group)
+        if not tasks:
+            continue
+
+        print(f"  Opening region selector for: {state_name}")
+        print(f"    ({len(tasks)} item(s) to capture)")
+        print()
+
+        selector = RegionSelector(screenshot, tasks, asset_dir)
+        results = selector.run()
+
+        # Merge results
+        for name, data in results.items():
+            if data["category"] == "element":
+                captured_elements[name] = data["filename"]
+            elif data["category"] == "region":
+                captured_regions[name] = {
+                    "x": data["x"],
+                    "y": data["y"],
+                    "w": data["w"],
+                    "h": data["h"],
+                }
+            elif data["category"] == "position":
+                captured_positions[name] = {
+                    "x": data["x"],
+                    "y": data["y"],
+                }
+
+    return {
+        "elements": captured_elements,
+        "regions": captured_regions,
+        "positions": captured_positions,
+        "asset_dir": f"assets/{game}/",
+    }
+
+
+def snapshot_capture_selected(
+    game: str,
+    selected_assets: list[tuple[str, str]],
+) -> dict:
+    """
+    Snapshot capture workflow for user-selected assets (interactive mode).
+
+    Same as snapshot_capture() but only captures the assets the user
+    checked off in the interactive picker.
+
+    Args:
+        game: Game key.
+        selected_assets: List of (category, name) tuples from interactive_select_assets().
+
+    Returns:
+        Dict with 'elements', 'regions', 'positions', and 'asset_dir' keys.
+    """
+    state_groups = GAME_STATE_GROUPS.get(game)
+    if not state_groups:
+        print(f"\n  No state groups defined for '{game}' — falling back to live mode.\n")
+        return capture_selected_elements(game, selected_assets)
+
+    asset_dir = PROJECT_ROOT / "assets" / game
+    asset_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build set of selected names
+    needed_names = {name for _cat, name in selected_assets}
+
+    # Phase 1: Collect snapshots (only for states with needed assets)
+    snapshots = _collect_snapshots(game, state_groups, needed_names=needed_names)
+
+    # Phase 2: Open RegionSelector for each state's screenshot
+    captured_elements: dict[str, str] = {}
+    captured_regions: dict[str, dict] = {}
+    captured_positions: dict[str, dict] = {}
+
+    for group in state_groups:
+        state_name = group["state"]
+        screenshot = snapshots.get(state_name)
+        if screenshot is None:
+            continue
+
+        tasks = _tasks_for_state(game, group, selected_names=needed_names)
+        if not tasks:
+            continue
+
+        print(f"  Opening region selector for: {state_name}")
+        print(f"    ({len(tasks)} item(s) to capture)")
+        print()
+
+        selector = RegionSelector(screenshot, tasks, asset_dir)
+        results = selector.run()
+
+        # Merge results
+        for name, data in results.items():
+            if data["category"] == "element":
+                captured_elements[name] = data["filename"]
+            elif data["category"] == "region":
+                captured_regions[name] = {
+                    "x": data["x"],
+                    "y": data["y"],
+                    "w": data["w"],
+                    "h": data["h"],
+                }
+            elif data["category"] == "position":
+                captured_positions[name] = {
+                    "x": data["x"],
+                    "y": data["y"],
+                }
+
+    return {
+        "elements": captured_elements,
+        "regions": captured_regions,
+        "positions": captured_positions,
+        "asset_dir": f"assets/{game}/",
+    }
+
+
 # ── Interactive mode functions ────────────────────────────────────────────
 
 # Shared keybindings: arrow keys (default) + vim j/k
@@ -884,13 +1498,39 @@ def interactive_new_game() -> None:
     Steps:
       1. Select game (arrow-key list)
       2. Select assets to capture (checkbox)
-      3. Capture and generate config
+      3. Choose capture method (live vs snapshot, for live-dealer games)
+      4. Capture and generate config
     """
     game = interactive_select_game()
     selected_assets = interactive_select_assets(game)
 
+    # Offer snapshot mode for games with state groups (live-dealer games)
+    if game in GAME_STATE_GROUPS:
+        method = inquirer.select(
+            message="Capture method:",
+            choices=[
+                {
+                    "name": "Snapshot mode — screenshot each state first, then crop "
+                            "(recommended for live games)",
+                    "value": "snapshot",
+                },
+                {
+                    "name": "Live mode — position cursor on screen for each element",
+                    "value": "live",
+                },
+            ],
+            keybindings=VIM_NAV_KEYBINDINGS,
+        ).execute()
+    else:
+        method = "live"
+
     init_retina_scale()
-    captured = capture_selected_elements(game, selected_assets)
+
+    if method == "snapshot":
+        captured = snapshot_capture_selected(game, selected_assets)
+    else:
+        captured = capture_selected_elements(game, selected_assets)
+
     config_path = generate_yaml_config(game, captured)
 
     print(f"\n{'='*60}")
@@ -943,6 +1583,12 @@ def main():
         metavar="GAME",
         help="Print a checklist of all assets needed for a game",
     )
+    parser.add_argument(
+        "--snapshot",
+        action="store_true",
+        help="Use snapshot mode: take screenshots of each game state first, "
+             "then crop assets from frozen images (recommended for live games)",
+    )
 
     args = parser.parse_args()
 
@@ -974,7 +1620,10 @@ def main():
     elif args.test:
         test_assets(args.game)
     else:
-        captured = capture_elements(args.game)
+        if args.snapshot:
+            captured = snapshot_capture(args.game)
+        else:
+            captured = capture_elements(args.game)
         config_path = generate_yaml_config(args.game, captured)
 
         print(f"\n{'='*60}")
