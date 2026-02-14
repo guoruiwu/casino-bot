@@ -12,16 +12,19 @@ Uses **image matching** (OpenCV template matching) to find UI elements and **OCR
 - macOS with Chrome browser
 - Homebrew
 
-### Install System Dependencies
-
-```bash
-brew install tesseract
-```
-
-### Install Python Dependencies
+### Quick Setup
 
 ```bash
 cd casino-bot
+./setup.sh
+```
+
+This installs Homebrew (if needed), Tesseract, and all Python dependencies in one step.
+
+Or install manually:
+
+```bash
+brew install tesseract
 pip3 install -r requirements.txt
 ```
 
@@ -103,9 +106,8 @@ Press `Ctrl+C` to gracefully stop after the current action completes.
 Assets (screenshots) and game configs contain screen coordinates and pixel data that are specific to each machine's display resolution. When moving to a new computer:
 
 ```bash
-# 1. Install dependencies
-brew install tesseract
-pip3 install -r requirements.txt
+# 1. Install dependencies (one command)
+./setup.sh
 
 # 2. Grant macOS permissions (Accessibility + Screen Recording)
 
