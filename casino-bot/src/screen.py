@@ -20,6 +20,13 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# Explicitly set tesseract path for macOS Homebrew installs where
+# /opt/homebrew/bin may not be in the Python process's PATH.
+import shutil
+_tesseract_path = shutil.which("tesseract") or "/opt/homebrew/bin/tesseract"
+if Path(_tesseract_path).exists():
+    pytesseract.pytesseract.tesseract_cmd = _tesseract_path
+
 # macOS Retina displays capture at 2x resolution.
 # Detect scale factor once at import time.
 _RETINA_SCALE: int = 2
