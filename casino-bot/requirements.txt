@@ -4,3 +4,4 @@ Pillow>=10.2.0
 pytesseract>=0.3.10
 PyYAML>=6.0.1
 numpy>=1.26.0
+InquirerPy>=0.3.4

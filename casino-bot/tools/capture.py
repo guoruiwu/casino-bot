@@ -3,6 +3,9 @@
 Asset capture tool for setting up new games.
 
 Usage:
+  # Interactive mode (arrow-key menus to select game type and assets)
+  python3 tools/capture.py
+
   # See what assets are needed for a game type
   python3 tools/capture.py --help-game infinite_blackjack
 
@@ -11,7 +14,10 @@ Usage:
   python3 tools/capture.py --game crazy_time_dk
   python3 tools/capture.py --game my_slot_dk --type slot
 
-  # Re-capture (or add) a single asset without re-running full capture
+  # Re-capture assets interactively (arrow-key picker)
+  python3 tools/capture.py --game diamond_wild --update-asset
+
+  # Re-capture a single asset by name
   python3 tools/capture.py --game diamond_wild --update-asset dismiss_popup
   python3 tools/capture.py --game my_slot_dk --update-asset spin_button
 
@@ -40,6 +46,8 @@ import cv2
 import numpy as np
 import pyautogui
 import yaml
+from InquirerPy import inquirer
+from InquirerPy.separator import Separator
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -661,6 +669,302 @@ def _resolve_game_type(args) -> str | None:
     return None
 
 
+# ── Interactive mode functions ────────────────────────────────────────────
+
+# Shared keybindings: arrow keys (default) + vim j/k
+VIM_NAV_KEYBINDINGS = {
+    "down": [{"key": "down"}, {"key": "j"}],
+    "up": [{"key": "up"}, {"key": "k"}],
+}
+
+def interactive_select_game() -> str:
+    """Arrow-key menu to select a game. First step — no back option."""
+    choices = [
+        {"name": gt, "value": gt}
+        for gt in KNOWN_GAME_TYPES
+    ]
+    return inquirer.select(
+        message="Select game:",
+        choices=choices,
+        keybindings=VIM_NAV_KEYBINDINGS,
+    ).execute()
+
+
+def interactive_enter_game_name(game_type: str, default: str = "") -> str:
+    """Prompt to customize the game name, with the game type pre-filled."""
+    return inquirer.text(
+        message="Game name:",
+        default=default or f"{game_type}_",
+        validate=lambda val: len(val.strip()) > 0,
+        invalid_message="Game name cannot be empty.",
+    ).execute().strip()
+
+
+def interactive_select_assets(game_type: str) -> list[tuple[str, str]]:
+    """
+    Arrow-key checkbox to select which assets to capture.
+
+    Returns a list of (category, name) tuples where category is one of:
+    'element', 'region', 'position'.
+    """
+    defs = GAME_TYPE_DEFS[game_type]
+    choices = []
+
+    # Required elements — pre-checked
+    if defs["elements"]:
+        choices.append(Separator("── Template Images ──"))
+        for name, desc, *_ in defs["elements"]:
+            choices.append({
+                "name": f"[required] {name} — {desc}",
+                "value": ("element", name),
+                "enabled": True,
+            })
+
+    # Optional elements (game-specific + common)
+    all_optional = list(defs["optional_elements"]) + COMMON_OPTIONAL_ELEMENTS
+    if all_optional:
+        choices.append(Separator("── Optional Elements ──"))
+        for name, desc in all_optional:
+            choices.append({
+                "name": f"[optional] {name} — {desc}",
+                "value": ("element", name),
+                "enabled": False,
+            })
+
+    # OCR Regions — pre-checked
+    if defs["regions"]:
+        choices.append(Separator("── OCR Regions ──"))
+        for name, desc in defs["regions"]:
+            choices.append({
+                "name": f"[region]   {name} — {desc}",
+                "value": ("region", name),
+                "enabled": True,
+            })
+
+    # Click Positions — pre-checked
+    if defs["positions"]:
+        choices.append(Separator("── Click Positions ──"))
+        for name, desc in defs["positions"]:
+            choices.append({
+                "name": f"[position] {name} — {desc}",
+                "value": ("position", name),
+                "enabled": True,
+            })
+
+    return inquirer.checkbox(
+        message="Select assets to capture (Space to toggle, Enter to confirm):",
+        choices=choices,
+        keybindings=VIM_NAV_KEYBINDINGS,
+        validate=lambda res: len(res) > 0,
+        invalid_message="You must select at least one asset.",
+    ).execute()
+
+
+def interactive_select_update_assets(game_name: str) -> list[str]:
+    """
+    Arrow-key checkbox to select which existing assets to re-capture.
+
+    Reads the game's config to find all current elements and presents
+    them as a selectable list.
+    """
+    config_path = PROJECT_ROOT / "config" / "games" / f"{game_name}.yaml"
+    if not config_path.exists():
+        print(f"Config not found: {config_path}")
+        print(f"Run a full capture first: python3 tools/capture.py --game {game_name}")
+        sys.exit(1)
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    game_type = config.get("game", {}).get("type")
+    defs = GAME_TYPE_DEFS.get(game_type, {})
+
+    # Build a lookup of all known asset descriptions for this game type
+    desc_map = {}
+    for name, desc, *_ in defs.get("elements", []):
+        desc_map[name] = desc
+    for name, desc in defs.get("optional_elements", []):
+        desc_map[name] = desc
+    for name, desc in COMMON_OPTIONAL_ELEMENTS:
+        desc_map[name] = desc
+
+    # Existing elements from config
+    elements = config.get("elements", {})
+    if not elements:
+        print(f"No elements found in config for '{game_name}'.")
+        sys.exit(1)
+
+    choices = []
+    for elem_name in elements:
+        desc = desc_map.get(elem_name, "")
+        label = f"{elem_name} — {desc}" if desc else elem_name
+        choices.append({"name": label, "value": elem_name})
+
+    # Also offer assets that exist for this game type but aren't captured yet
+    all_possible = set(desc_map.keys())
+    uncaptured = all_possible - set(elements.keys())
+    if uncaptured:
+        choices.append(Separator("── Not yet captured ──"))
+        for name in sorted(uncaptured):
+            desc = desc_map.get(name, "")
+            label = f"{name} — {desc}" if desc else name
+            choices.append({"name": label, "value": name})
+
+    selected = inquirer.checkbox(
+        message="Select assets to re-capture (Space to toggle, Enter to confirm):",
+        choices=choices,
+        keybindings=VIM_NAV_KEYBINDINGS,
+        validate=lambda result: len(result) > 0,
+        invalid_message="You must select at least one asset.",
+    ).execute()
+
+    return selected
+
+
+def capture_selected_elements(
+    game_name: str,
+    game_type: str,
+    selected_assets: list[tuple[str, str]],
+) -> dict:
+    """
+    Capture only the user-selected assets for a game.
+
+    Args:
+        game_name: Name for the game (used for directory naming).
+        game_type: Game type key from GAME_TYPE_DEFS.
+        selected_assets: List of (category, name) tuples from the interactive picker.
+
+    Returns:
+        Dict with 'elements', 'regions', 'positions', and 'asset_dir' keys.
+    """
+    asset_dir = PROJECT_ROOT / "assets" / game_name
+    asset_dir.mkdir(parents=True, exist_ok=True)
+
+    defs = GAME_TYPE_DEFS[game_type]
+
+    # Build lookup maps for descriptions
+    elem_desc = {}
+    for name, desc, *_ in defs["elements"]:
+        elem_desc[name] = desc
+    for name, desc in defs["optional_elements"]:
+        elem_desc[name] = desc
+    for name, desc in COMMON_OPTIONAL_ELEMENTS:
+        elem_desc[name] = desc
+
+    region_desc = {name: desc for name, desc in defs["regions"]}
+    position_desc = {name: desc for name, desc in defs["positions"]}
+
+    captured_elements = {}
+    captured_regions = {}
+    captured_positions = {}
+
+    # Split selections by category
+    sel_elements = [name for cat, name in selected_assets if cat == "element"]
+    sel_regions = [name for cat, name in selected_assets if cat == "region"]
+    sel_positions = [name for cat, name in selected_assets if cat == "position"]
+
+    print(f"\n{'='*60}")
+    print(f"  Capturing assets for: {game_name} ({game_type})")
+    print(f"  Asset directory: {asset_dir}")
+    print(f"{'='*60}")
+    print()
+    print("  Make sure the game is open and visible in Chrome.")
+    print()
+
+    # ── Capture template elements ──
+    if sel_elements:
+        print(f"--- Template Elements ({len(sel_elements)}) ---\n")
+        for elem_name in sel_elements:
+            desc = elem_desc.get(elem_name, "")
+            print(f"  [{elem_name}] {desc}")
+            result = capture_screenshot_region()
+            if result is None:
+                print("    Failed — try again")
+                result = capture_screenshot_region()
+            if result is None:
+                print("    Skipped.\n")
+                continue
+
+            img, region = result
+            filename = f"{elem_name}.png"
+            filepath = asset_dir / filename
+            cv2.imwrite(str(filepath), img)
+            captured_elements[elem_name] = filename
+            print(f"    Saved: {filepath}\n")
+
+    # ── Capture OCR regions ──
+    if sel_regions:
+        print(f"\n--- OCR Regions ({len(sel_regions)}) ---\n")
+        print("  For each region, select the area containing the number to read.\n")
+        for region_name in sel_regions:
+            desc = region_desc.get(region_name, "")
+            print(f"  [{region_name}] {desc}")
+            result = capture_screenshot_region()
+            if result is None:
+                print("    Failed — try again")
+                result = capture_screenshot_region()
+            if result is None:
+                print("    Skipped.\n")
+                continue
+
+            _, region = result
+            captured_regions[region_name] = region
+            print(f"    Region: x={region['x']}, y={region['y']}, "
+                  f"w={region['w']}, h={region['h']}\n")
+
+    # ── Capture click positions ──
+    if sel_positions:
+        print(f"\n--- Click Positions ({len(sel_positions)}) ---\n")
+        for pos_name in sel_positions:
+            desc = position_desc.get(pos_name, "")
+            pos = capture_position(f"[{pos_name}] {desc} — hover and press Enter")
+            captured_positions[pos_name] = {"x": pos[0], "y": pos[1]}
+            print()
+
+    return {
+        "elements": captured_elements,
+        "regions": captured_regions,
+        "positions": captured_positions,
+        "asset_dir": f"assets/{game_name}/",
+    }
+
+
+def interactive_new_game() -> None:
+    """
+    Full interactive flow: select game, name it, pick assets, capture.
+
+    Steps:
+      1. Select game (arrow-key list)
+      2. Enter game name (text, pre-filled with game type prefix)
+      3. Select assets to capture (checkbox)
+      4. Capture and generate config
+    """
+    game_type = interactive_select_game()
+    game_name = interactive_enter_game_name(game_type)
+    selected_assets = interactive_select_assets(game_type)
+
+    init_retina_scale()
+    captured = capture_selected_elements(game_name, game_type, selected_assets)
+    config_path = generate_yaml_config(game_name, game_type, captured)
+
+    print(f"\n{'='*60}")
+    print(f"  Done! Next steps:")
+    print(f"  1. Review config: {config_path}")
+    print(f"  2. Test: python3 tools/capture.py --game {game_name} --test")
+    print(f"  3. Run: python3 main.py --config {config_path} --duration 60")
+    print(f"{'='*60}\n")
+
+
+def interactive_update_game(game_name: str) -> None:
+    """Interactive flow: select which assets to re-capture for an existing game."""
+    selected = interactive_select_update_assets(game_name)
+
+    init_retina_scale()
+
+    for element_name in selected:
+        update_single_asset(game_name, element_name)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Capture game assets and generate YAML configs"
@@ -686,7 +990,10 @@ def main():
     parser.add_argument(
         "--update-asset",
         metavar="ELEMENT",
-        help="Re-capture a single asset by name (e.g. --update-asset dismiss_popup)",
+        nargs="?",
+        const="__interactive__",
+        help="Re-capture asset(s). With a name: re-captures that asset. "
+             "Without a name: interactive picker.",
     )
     parser.add_argument(
         "--help-game",
@@ -701,14 +1008,18 @@ def main():
         print_game_help(args.help_game)
         sys.exit(0)
 
-    # All other commands require --game
+    # No --game flag: enter fully interactive mode
     if not args.game:
-        parser.error("--game is required (unless using --help-game)")
+        interactive_new_game()
+        sys.exit(0)
 
     init_retina_scale()
 
     if args.update_asset:
-        update_single_asset(args.game, args.update_asset)
+        if args.update_asset == "__interactive__":
+            interactive_update_game(args.game)
+        else:
+            update_single_asset(args.game, args.update_asset)
     elif args.reset:
         game_type = _resolve_game_type(args)
         reset_game(args.game)
