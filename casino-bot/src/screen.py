@@ -198,7 +198,7 @@ def find_all_elements(
     return results
 
 
-def read_text(region: dict, preprocess: str = "thresh") -> str:
+def read_text(region: dict, preprocess: str = "thresh", whitelist: str = "") -> str:
     """
     Read text from a screen region using OCR (Tesseract).
 
@@ -206,6 +206,8 @@ def read_text(region: dict, preprocess: str = "thresh") -> str:
         region: Dict with keys x, y, w, h in logical (PyAutoGUI) coordinates.
         preprocess: Preprocessing method — "thresh" for thresholding (good for dark
                     backgrounds), "blur" for Gaussian blur, or "none".
+        whitelist: If non-empty, restrict Tesseract to only these characters
+                   (e.g. "0123456789/" for digit-only fields).
 
     Returns:
         Extracted text string, stripped of whitespace.
@@ -226,7 +228,10 @@ def read_text(region: dict, preprocess: str = "thresh") -> str:
     gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
     # Run Tesseract OCR
-    text = pytesseract.image_to_string(gray, config="--psm 7")  # Single line mode
+    config = "--psm 7"
+    if whitelist:
+        config += f" -c tessedit_char_whitelist={whitelist}"
+    text = pytesseract.image_to_string(gray, config=config)
 
     cleaned = text.strip()
     logger.debug(f"OCR region {region}: '{cleaned}'")

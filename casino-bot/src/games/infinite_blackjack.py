@@ -369,6 +369,24 @@ class InfiniteBlackjackGame(BaseGame):
 
     # ── OCR Readers ──────────────────────────────────────────────────────
 
+    # Known OCR misreads for digits in the player total region.
+    # Applied as a safety net after Tesseract (even with a whitelist,
+    # misreads can still occur on stylised game fonts).
+    _OCR_CORRECTIONS: dict[str, str] = {
+        "&": "8",
+        "@": "8",
+        "B": "8",
+        "O": "0",
+        "o": "0",
+        "l": "1",
+        "I": "1",
+        "|": "1",
+        "S": "5",
+        "s": "5",
+        "Z": "2",
+        "z": "2",
+    }
+
     def _read_player_total(self) -> Optional[tuple[int, bool]]:
         """
         Read the player's hand total via OCR.
@@ -385,12 +403,15 @@ class InfiniteBlackjackGame(BaseGame):
         if not region:
             return None
 
-        text = read_text(region)
+        text = read_text(region, whitelist="0123456789/")
         if not text:
             return None
 
         # Clean up common OCR artifacts
         cleaned = text.replace(" ", "").strip()
+
+        # Apply known OCR character corrections (e.g. "&" -> "8")
+        cleaned = "".join(self._OCR_CORRECTIONS.get(ch, ch) for ch in cleaned)
 
         # Soft hand: slash notation like "11/21" or "3/13"
         if "/" in cleaned:
@@ -429,15 +450,30 @@ class InfiniteBlackjackGame(BaseGame):
         if not region:
             return None
 
-        value = read_number(region)
-        if value is not None:
-            upcard = int(value)
+        text = read_text(region, whitelist="0123456789")
+        if not text:
+            return None
+
+        # Apply known OCR character corrections (e.g. "@" -> "8")
+        cleaned = text.replace(" ", "").strip()
+        cleaned = "".join(self._OCR_CORRECTIONS.get(ch, ch) for ch in cleaned)
+
+        # Keep only digits
+        numeric = "".join(ch for ch in cleaned if ch.isdigit())
+        if not numeric:
+            logger.warning(f"Could not parse dealer total from OCR text: '{text}'")
+            return None
+
+        try:
+            upcard = int(numeric)
             # Face cards (J/Q/K) are worth 10, Ace = 11
             if upcard > 11:
                 upcard = 10
             logger.debug(f"Dealer upcard: {upcard}")
             return upcard
-        return None
+        except ValueError:
+            logger.warning(f"Could not convert dealer total: '{numeric}' (raw: '{text}')")
+            return None
 
     def _read_balance(self) -> Optional[float]:
         """Read current balance via OCR."""

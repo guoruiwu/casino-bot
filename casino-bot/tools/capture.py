@@ -454,7 +454,13 @@ def capture_elements(game: str) -> dict:
 
 
 def generate_yaml_config(game: str, captured: dict) -> str:
-    """Generate a YAML config file from captured data."""
+    """Generate (or merge into) a YAML config file from captured data.
+
+    If a config file already exists, newly captured elements, regions, and
+    positions are merged into it so that previously configured values are
+    preserved.  Only keys that were actually captured (non-empty) overwrite
+    existing values.
+    """
     config_dir = PROJECT_ROOT / "config" / "games"
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / f"{game}.yaml"
@@ -468,9 +474,46 @@ def generate_yaml_config(game: str, captured: dict) -> str:
 
     generator = config_generators.get(game)
     if generator:
-        config = generator(game, captured)
+        new_config = generator(game, captured)
     else:
-        config = {}
+        new_config = {}
+
+    # If a config already exists, merge newly captured data into it
+    if config_path.exists():
+        with open(config_path) as f:
+            existing = yaml.safe_load(f) or {}
+
+        # Merge elements: add new, keep existing
+        existing_elements = existing.get("elements", {})
+        new_elements = new_config.get("elements", {})
+        if new_elements:
+            existing_elements.update(new_elements)
+        existing["elements"] = existing_elements
+
+        # Merge regions: add new, keep existing
+        existing_regions = existing.get("regions", {})
+        new_regions = new_config.get("regions", {})
+        if new_regions:
+            existing_regions.update(new_regions)
+        existing["regions"] = existing_regions
+
+        # Merge positions / bet_spot: only overwrite if actually captured
+        # (detect zero-value defaults that indicate "not captured")
+        for pos_key in ("bet_spot",):
+            new_pos = new_config.get(pos_key)
+            if new_pos and not (new_pos.get("x") == 0 and new_pos.get("y") == 0):
+                existing[pos_key] = new_pos
+            # else: keep whatever was in existing config
+
+        # Preserve game metadata and settings from existing (don't downgrade)
+        if "game" not in existing:
+            existing["game"] = new_config.get("game", {})
+        if "settings" not in existing:
+            existing["settings"] = new_config.get("settings", {})
+
+        config = existing
+    else:
+        config = new_config
 
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)

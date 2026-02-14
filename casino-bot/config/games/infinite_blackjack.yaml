@@ -8,6 +8,7 @@ elements:
   hit_button: hit_button.png
   stand_button: stand_button.png
   double_button: double_button.png
+  reality_check: reality_check.png
 regions:
   balance:
     x: 92
