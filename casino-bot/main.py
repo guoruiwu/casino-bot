@@ -161,7 +161,7 @@ def interactive_get_duration() -> float:
     return float(duration_str)
 
 
-def interactive_mode(verbose: bool = False):
+def interactive_mode(verbose: bool = False, debug_screenshots: bool = False):
     """Fully interactive flow: select game → enter duration → run."""
     games = _available_games()
 
@@ -192,7 +192,7 @@ def interactive_mode(verbose: bool = False):
 
     RunnerClass = get_runner_class(selected["key"])
     runner = RunnerClass(selected["config_path"])
-    runner.run(duration_minutes=duration)
+    runner.run(duration_minutes=duration, debug_screenshots=debug_screenshots)
 
 
 # ── CLI mode (legacy --config flag) ──────────────────────────────────────
@@ -217,7 +217,7 @@ def cli_mode(args):
 
     RunnerClass = get_runner_class(game)
     runner = RunnerClass(config_path)
-    runner.run(duration_minutes=args.duration)
+    runner.run(duration_minutes=args.duration, debug_screenshots=args.debug_screenshots)
 
 
 # ── Entry point ──────────────────────────────────────────────────────────
@@ -253,13 +253,18 @@ Examples:
         action="store_true",
         help="Enable debug logging",
     )
+    parser.add_argument(
+        "--debug-screenshots",
+        action="store_true",
+        help="Save debug screenshots when OCR fails (saved to debug/ocr/)",
+    )
 
     args = parser.parse_args()
 
     if args.config:
         cli_mode(args)
     else:
-        interactive_mode(verbose=args.verbose)
+        interactive_mode(verbose=args.verbose, debug_screenshots=args.debug_screenshots)
 
 
 if __name__ == "__main__":

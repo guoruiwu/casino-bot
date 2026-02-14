@@ -261,13 +261,16 @@ class BaseGame(ABC):
         """Called once when the game session ends. Override for cleanup logic."""
         pass
 
-    def run(self, duration_minutes: Optional[float] = None) -> None:
+    def run(self, duration_minutes: Optional[float] = None, debug_screenshots: bool = False) -> None:
         """
         Main game loop. Runs until session timer expires or Ctrl+C.
 
         Args:
             duration_minutes: Override session duration from config.
+            debug_screenshots: If True, save debug screenshots when OCR fails.
         """
+        self.debug_screenshots = debug_screenshots
+
         if duration_minutes is not None:
             self.session_duration = duration_minutes
 

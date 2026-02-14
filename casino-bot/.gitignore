@@ -28,6 +28,9 @@ logs/*.log
 errors/*.png
 errors/*.jpg
 
+# OCR debug screenshots
+debug/
+
 # Captured assets and game configs are machine-specific (screen resolution, positions)
 assets/*
 !assets/.gitkeep

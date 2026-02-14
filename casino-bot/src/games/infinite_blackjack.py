@@ -14,11 +14,14 @@ Rules (FanDuel Infinite Blackjack):
 
 from __future__ import annotations
 
+import datetime
 import logging
 import time
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+
+import cv2
 
 from src.actions import (
     click_element,
@@ -294,7 +297,11 @@ class InfiniteBlackjackGame(BaseGame):
         # Read player total (returns tuple of (total, is_soft) or None)
         result = self._read_player_total()
         if result is None:
-            logger.warning("Could not read player total — defaulting to stand")
+            region = self.get_region("player_total")
+            logger.warning(
+                f"Could not read player total — defaulting to stand "
+                f"(region: {region})"
+            )
             self._click_stand()
             return
 
@@ -303,7 +310,12 @@ class InfiniteBlackjackGame(BaseGame):
         # Read dealer total
         dealer_total = self._read_dealer_total()
         if dealer_total is None:
-            logger.warning("Could not read dealer total — using conservative play")
+            region = self.get_region("dealer_total")
+            soft_label = "soft " if is_soft else ""
+            logger.warning(
+                f"Could not read dealer total — using conservative play "
+                f"(player was {soft_label}{player_total}, region: {region})"
+            )
             # Conservative fallback: stand on 12+, hit on 11 or less
             if player_total >= 12:
                 self._click_stand()
@@ -387,6 +399,51 @@ class InfiniteBlackjackGame(BaseGame):
         "z": "2",
     }
 
+    def _save_debug_screenshot(self, region: dict, label: str) -> None:
+        """
+        Save debug screenshots of an OCR region when reading fails.
+
+        Captures both the raw screenshot and the preprocessed (grayscale +
+        thresholded + scaled) version that Tesseract would see, so the images
+        can be inspected after the session.
+
+        Files are saved to ``debug/ocr/`` under the project root with a
+        timestamp, e.g.::
+
+            debug/ocr/player_total_20260214_153022_raw.png
+            debug/ocr/player_total_20260214_153022_processed.png
+
+        Args:
+            region: Dict with keys x, y, w, h (logical coordinates).
+            label:  Descriptive name used in the filename (e.g. "player_total").
+        """
+        try:
+            debug_dir = Path(__file__).resolve().parent.parent.parent / "debug" / "ocr"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_name = f"{label}_{timestamp}"
+
+            # Capture the raw region screenshot
+            raw_img = take_screenshot(region)
+            raw_path = debug_dir / f"{base_name}_raw.png"
+            cv2.imwrite(str(raw_path), raw_img)
+
+            # Reproduce the same preprocessing pipeline used by read_text()
+            gray = cv2.cvtColor(raw_img, cv2.COLOR_BGR2GRAY)
+            gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+            scale = 2
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+            processed_path = debug_dir / f"{base_name}_processed.png"
+            cv2.imwrite(str(processed_path), gray)
+
+            logger.warning(
+                f"OCR debug screenshots saved: {raw_path} and {processed_path}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save debug screenshot for '{label}': {e}")
+
     def _read_player_total(self) -> Optional[tuple[int, bool]]:
         """
         Read the player's hand total via OCR.
@@ -405,6 +462,9 @@ class InfiniteBlackjackGame(BaseGame):
 
         text = read_text(region, whitelist="0123456789/")
         if not text:
+            logger.warning(f"OCR returned empty text for player_total region {region}")
+            if self.debug_screenshots:
+                self._save_debug_screenshot(region, "player_total")
             return None
 
         # Clean up common OCR artifacts
@@ -427,6 +487,8 @@ class InfiniteBlackjackGame(BaseGame):
                     logger.warning(
                         f"Could not parse soft total from OCR text: '{text}'"
                     )
+                    if self.debug_screenshots:
+                        self._save_debug_screenshot(region, "player_total")
                     return None
 
         # Hard hand: plain number like "15"
@@ -434,6 +496,8 @@ class InfiniteBlackjackGame(BaseGame):
         numeric = "".join(ch for ch in cleaned if ch.isdigit())
         if not numeric:
             logger.warning(f"Could not parse player total from OCR text: '{text}'")
+            if self.debug_screenshots:
+                self._save_debug_screenshot(region, "player_total")
             return None
 
         try:
@@ -442,6 +506,8 @@ class InfiniteBlackjackGame(BaseGame):
             return (total, False)
         except ValueError:
             logger.warning(f"Could not convert player total: '{numeric}' (raw: '{text}')")
+            if self.debug_screenshots:
+                self._save_debug_screenshot(region, "player_total")
             return None
 
     def _read_dealer_total(self) -> Optional[int]:
@@ -452,6 +518,9 @@ class InfiniteBlackjackGame(BaseGame):
 
         text = read_text(region, whitelist="0123456789")
         if not text:
+            logger.warning(f"OCR returned empty text for dealer_total region {region}")
+            if self.debug_screenshots:
+                self._save_debug_screenshot(region, "dealer_total")
             return None
 
         # Apply known OCR character corrections (e.g. "@" -> "8")
@@ -462,6 +531,8 @@ class InfiniteBlackjackGame(BaseGame):
         numeric = "".join(ch for ch in cleaned if ch.isdigit())
         if not numeric:
             logger.warning(f"Could not parse dealer total from OCR text: '{text}'")
+            if self.debug_screenshots:
+                self._save_debug_screenshot(region, "dealer_total")
             return None
 
         try:
@@ -473,6 +544,8 @@ class InfiniteBlackjackGame(BaseGame):
             return upcard
         except ValueError:
             logger.warning(f"Could not convert dealer total: '{numeric}' (raw: '{text}')")
+            if self.debug_screenshots:
+                self._save_debug_screenshot(region, "dealer_total")
             return None
 
     def _read_balance(self) -> Optional[float]:
