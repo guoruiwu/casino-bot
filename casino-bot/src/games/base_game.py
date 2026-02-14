@@ -261,15 +261,24 @@ class BaseGame(ABC):
         """Called once when the game session ends. Override for cleanup logic."""
         pass
 
-    def run(self, duration_minutes: Optional[float] = None, debug_screenshots: bool = False) -> None:
+    def run(
+        self,
+        duration_minutes: Optional[float] = None,
+        debug_screenshots: bool = False,
+        ocr_snapshot_limit: int = 50,
+    ) -> None:
         """
         Main game loop. Runs until session timer expires or Ctrl+C.
 
         Args:
             duration_minutes: Override session duration from config.
             debug_screenshots: If True, save debug screenshots when OCR fails.
+                (Legacy — snapshots are now always saved with rotation.)
+            ocr_snapshot_limit: Max OCR snapshots to keep per region label
+                before oldest are rotated out.  Set to 0 to disable capture.
         """
         self.debug_screenshots = debug_screenshots
+        self.ocr_snapshot_limit = ocr_snapshot_limit
 
         if duration_minutes is not None:
             self.session_duration = duration_minutes

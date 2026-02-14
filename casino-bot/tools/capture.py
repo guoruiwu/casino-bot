@@ -63,6 +63,7 @@ from InquirerPy.separator import Separator
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.ocr_debug import preprocess_for_ocr
 from src.screen import find_element, init_retina_scale, take_screenshot
 
 # Set up tesseract path (same logic as src/screen.py)
@@ -75,13 +76,7 @@ if Path(_tesseract_path).exists():
 
 def _ocr_preview(crop_2x: np.ndarray, preprocess: str = "thresh") -> str:
     """Run OCR on a cropped 2x region and return the recognized text."""
-    gray = cv2.cvtColor(crop_2x, cv2.COLOR_BGR2GRAY)
-    if preprocess == "thresh":
-        gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-    elif preprocess == "blur":
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    scale = 2
-    gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    gray = preprocess_for_ocr(crop_2x, preprocess=preprocess)
     text = pytesseract.image_to_string(gray, config="--psm 7")
     return text.strip()
 

@@ -14,14 +14,11 @@ Rules (FanDuel Infinite Blackjack):
 
 from __future__ import annotations
 
-import datetime
 import logging
 import time
 from enum import Enum
 from pathlib import Path
 from typing import Optional
-
-import cv2
 
 from src.actions import (
     click_element,
@@ -30,6 +27,7 @@ from src.actions import (
     random_delay,
 )
 from src.games.base_game import BaseGame
+from src.ocr_debug import preprocess_for_ocr, save_ocr_snapshot
 from src.screen import (
     find_element,
     read_number,
@@ -177,6 +175,46 @@ def get_action_no_dealer(player_total: int, is_soft: bool = False) -> str:
         if action == "double":
             action = "hit"
         votes[action] = votes.get(action, 0) + weight
+
+    return "hit" if votes["hit"] >= votes["stand"] else "stand"
+
+
+# Dealer upcards that OCR consistently fails to read (thin/simple glyphs
+# that Tesseract cannot distinguish from the pill-shaped background).
+# Empirically determined from debug screenshots: every OCR failure is one
+# of these three values.
+_OCR_FAIL_DEALER_UPCARDS: tuple[int, ...] = (6, 7, 11)
+
+
+def get_action_constrained_dealer(
+    player_total: int,
+    is_soft: bool = False,
+    candidates: tuple[int, ...] = _OCR_FAIL_DEALER_UPCARDS,
+) -> str:
+    """
+    Return the majority-vote action across a constrained set of likely dealer
+    upcards.
+
+    Used when dealer OCR fails — instead of weighting over all 10 possible
+    upcards, we only consider the values known to cause OCR failures and
+    pick the action that the majority agree on.
+
+    Args:
+        player_total: Player's hand total (4-21).
+        is_soft: True if the hand contains an Ace counted as 11 (soft hand).
+        candidates: Tuple of dealer upcards to vote across.
+
+    Returns:
+        "hit" or "stand".
+    """
+    votes: dict[str, int] = {"hit": 0, "stand": 0}
+
+    for upcard in candidates:
+        action = get_action(player_total, upcard, is_soft=is_soft)
+        # Treat "double" as "hit" since double may not be available.
+        if action == "double":
+            action = "hit"
+        votes[action] = votes.get(action, 0) + 1
 
     return "hit" if votes["hit"] >= votes["stand"] else "stand"
 
@@ -334,12 +372,15 @@ class InfiniteBlackjackGame(BaseGame):
         # Read player total (returns tuple of (total, is_soft) or None)
         result = self._read_player_total()
         if result is None:
+            # OCR failures for the player total are empirically always 7 or 8,
+            # both of which call for "hit" against every dealer upcard.
             region = self.get_region("player_total")
             logger.warning(
-                f"Could not read player total — defaulting to stand "
+                f"Could not read player total — defaulting to hit "
+                f"(OCR failures are consistently 7 or 8, both always hit) "
                 f"(region: {region})"
             )
-            self._click_stand()
+            self._click_hit()
             return
 
         player_total, is_soft = result
@@ -347,12 +388,16 @@ class InfiniteBlackjackGame(BaseGame):
         # Read dealer total
         dealer_total = self._read_dealer_total()
         if dealer_total is None:
+            # OCR failures for the dealer upcard are empirically always 6, 7,
+            # or 11.  Use majority-vote strategy across those three values
+            # instead of weighting over all possible upcards.
             region = self.get_region("dealer_total")
             soft_label = "soft " if is_soft else ""
-            action = get_action_no_dealer(player_total, is_soft)
+            action = get_action_constrained_dealer(player_total, is_soft)
             logger.warning(
-                f"Could not read dealer total — using probability-weighted "
-                f"strategy: {action.upper()} "
+                f"Could not read dealer total — using constrained strategy "
+                f"(majority vote over likely upcards {_OCR_FAIL_DEALER_UPCARDS}): "
+                f"{action.upper()} "
                 f"(player was {soft_label}{player_total}, region: {region})"
             )
             if action == "stand":
@@ -437,72 +482,46 @@ class InfiniteBlackjackGame(BaseGame):
         "z": "2",
     }
 
-    def _save_debug_screenshot(self, region: dict, label: str) -> None:
+    def _save_ocr_snapshot(
+        self,
+        region: dict,
+        label: str,
+        ocr_text: str = "",
+        parsed_value: object = None,
+        success: bool = False,
+        invert: bool = True,
+    ) -> None:
         """
-        Save debug screenshots of an OCR region when reading fails.
+        Capture an OCR snapshot (raw + processed crops and JSON metadata).
 
-        Captures both the raw screenshot and the preprocessed (grayscale +
-        thresholded + scaled) version that Tesseract would see, so the images
-        can be inspected after the session.
-
-        Files are saved to ``debug/ocr/`` under the project root with a
-        timestamp, e.g.::
-
-            debug/ocr/player_total_20260214_153022_raw.png
-            debug/ocr/player_total_20260214_153022_processed.png
-
-        Args:
-            region: Dict with keys x, y, w, h (logical coordinates).
-            label:  Descriptive name used in the filename (e.g. "player_total").
+        Called on every OCR read (success or failure) so a labeled dataset
+        is built up over time.  Automatic rotation limits disk usage.
         """
         try:
-            debug_dir = Path(__file__).resolve().parent.parent.parent / "debug" / "ocr"
-            debug_dir.mkdir(parents=True, exist_ok=True)
-
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_name = f"{label}_{timestamp}"
-
-            # Capture the raw region screenshot
             raw_img = take_screenshot(region)
-            raw_path = debug_dir / f"{base_name}_raw.png"
-            cv2.imwrite(str(raw_path), raw_img)
-
-            # Reproduce the same preprocessing pipeline used by read_text()
-            gray = cv2.cvtColor(raw_img, cv2.COLOR_BGR2GRAY)
-            gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-            scale = 2
-            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-
-            processed_path = debug_dir / f"{base_name}_processed.png"
-            cv2.imwrite(str(processed_path), gray)
-
-            logger.warning(
-                f"OCR debug screenshots saved: {raw_path} and {processed_path}"
+            processed_img = preprocess_for_ocr(raw_img)
+            save_ocr_snapshot(
+                raw_img=raw_img,
+                processed_img=processed_img,
+                label=label,
+                region=region,
+                ocr_text=ocr_text,
+                parsed_value=parsed_value,
+                success=success,
+                invert=invert,
+                max_snapshots=getattr(self, "ocr_snapshot_limit", 50),
             )
         except Exception as e:
-            logger.warning(f"Failed to save debug screenshot for '{label}': {e}")
+            logger.warning(f"Failed to save OCR snapshot for '{label}': {e}")
 
-    def _read_player_total(self) -> Optional[tuple[int, bool]]:
+    def _parse_player_total(self, text: str) -> Optional[tuple[int, bool]]:
         """
-        Read the player's hand total via OCR.
-
-        Handles soft hands where the display shows slash notation (e.g. "11/21"
-        meaning the hand is soft 21).
+        Parse a raw OCR string into a validated player total.
 
         Returns:
-            Tuple of (total, is_soft), or None if OCR failed.
-            - total: the higher hand value (the one after the slash for soft hands)
-            - is_soft: True if the hand contains an Ace counted as 11
+            Tuple of (total, is_soft), or None if parsing/validation failed.
         """
-        region = self.get_region("player_total")
-        if not region:
-            return None
-
-        text = read_text(region, whitelist="0123456789/")
         if not text:
-            logger.warning(f"OCR returned empty text for player_total region {region}")
-            if self.debug_screenshots:
-                self._save_debug_screenshot(region, "player_total")
             return None
 
         # Clean up common OCR artifacts
@@ -519,101 +538,144 @@ class InfiniteBlackjackGame(BaseGame):
                     low = int(parts[0])
                     high = int(parts[1])
                     total = max(low, high)
-                    # Sanity: the two values should differ by exactly 10 (the
-                    # Ace spread) and the high value must be in [12, 21].
                     if abs(high - low) != 10 or not (12 <= total <= 21):
-                        logger.warning(
-                            f"Soft total failed sanity check: "
-                            f"{low}/{high} (raw: '{text}')"
-                        )
-                        if self.debug_screenshots:
-                            self._save_debug_screenshot(region, "player_total")
                         return None
-                    logger.debug(f"Player total: {total} (soft, raw: '{text}')")
                     return (total, True)
                 except ValueError:
-                    logger.warning(
-                        f"Could not parse soft total from OCR text: '{text}'"
-                    )
-                    if self.debug_screenshots:
-                        self._save_debug_screenshot(region, "player_total")
                     return None
 
         # Hard hand: plain number like "15"
-        # Keep only digits
         numeric = "".join(ch for ch in cleaned if ch.isdigit())
         if not numeric:
-            logger.warning(f"Could not parse player total from OCR text: '{text}'")
-            if self.debug_screenshots:
-                self._save_debug_screenshot(region, "player_total")
             return None
 
         try:
             total = int(numeric)
-            # Sanity: a valid player hand total during decision is 4-21.
-            # (Minimum two-card hand is 2+2=4; above 21 is bust / not actionable.)
             if not (4 <= total <= 21):
-                logger.warning(
-                    f"Player total {total} outside valid range [4, 21] — "
-                    f"treating as OCR error (raw: '{text}')"
-                )
-                if self.debug_screenshots:
-                    self._save_debug_screenshot(region, "player_total")
                 return None
-            logger.debug(f"Player total: {total} (hard, raw: '{text}')")
             return (total, False)
         except ValueError:
-            logger.warning(f"Could not convert player total: '{numeric}' (raw: '{text}')")
-            if self.debug_screenshots:
-                self._save_debug_screenshot(region, "player_total")
             return None
 
-    def _read_dealer_total(self) -> Optional[int]:
-        """Read the dealer's total via OCR."""
-        region = self.get_region("dealer_total")
+    def _read_player_total(self) -> Optional[tuple[int, bool]]:
+        """
+        Read the player's hand total via OCR.
+
+        Handles soft hands where the display shows slash notation (e.g. "11/21"
+        meaning the hand is soft 21).
+
+        Tries OCR with inversion first (dark-text-on-white), then falls back
+        to without inversion if the first attempt fails validation.
+
+        Returns:
+            Tuple of (total, is_soft), or None if OCR failed.
+            - total: the higher hand value (the one after the slash for soft hands)
+            - is_soft: True if the hand contains an Ace counted as 11
+        """
+        region = self.get_region("player_total")
         if not region:
             return None
 
-        text = read_text(region, whitelist="0123456789")
+        # Try with inversion first, then without
+        for invert in (True, False):
+            text = read_text(region, whitelist="0123456789/", invert=invert)
+            result = self._parse_player_total(text)
+            if result is not None:
+                total, is_soft = result
+                soft_label = "soft, " if is_soft else "hard, "
+                inv_label = "inverted" if invert else "non-inverted"
+                logger.debug(
+                    f"Player total: {total} ({soft_label}{inv_label}, raw: '{text}')"
+                )
+                self._save_ocr_snapshot(
+                    region, "player_total",
+                    ocr_text=text, parsed_value=result,
+                    success=True, invert=invert,
+                )
+                return result
+            if text:
+                inv_label = "inverted" if invert else "non-inverted"
+                logger.debug(
+                    f"Player total OCR attempt ({inv_label}) failed "
+                    f"validation: '{text}'"
+                )
+
+        logger.warning(
+            f"Could not read player total after trying both inversion modes "
+            f"(region: {region})"
+        )
+        self._save_ocr_snapshot(
+            region, "player_total", ocr_text="", success=False,
+        )
+        return None
+
+    def _parse_dealer_total(self, text: str) -> Optional[int]:
+        """
+        Parse a raw OCR string into a validated dealer upcard value.
+
+        Returns:
+            Integer in [2, 11], or None if parsing/validation failed.
+        """
         if not text:
-            logger.warning(f"OCR returned empty text for dealer_total region {region}")
-            if self.debug_screenshots:
-                self._save_debug_screenshot(region, "dealer_total")
             return None
 
-        # Apply known OCR character corrections (e.g. "@" -> "8")
         cleaned = text.replace(" ", "").strip()
         cleaned = "".join(self._OCR_CORRECTIONS.get(ch, ch) for ch in cleaned)
 
-        # Keep only digits
         numeric = "".join(ch for ch in cleaned if ch.isdigit())
         if not numeric:
-            logger.warning(f"Could not parse dealer total from OCR text: '{text}'")
-            if self.debug_screenshots:
-                self._save_debug_screenshot(region, "dealer_total")
             return None
 
         try:
             upcard = int(numeric)
-            # Sanity: a valid dealer upcard is 2-11 (where 11 = Ace).
-            # Values 0 or 1 are impossible cards; values 12+ are likely OCR
-            # garbage (e.g. "4" read as "44"). Reject rather than silently
-            # clamping to avoid acting on wrong strategy lookups.
             if not (2 <= upcard <= 11):
-                logger.warning(
-                    f"Dealer upcard {upcard} outside valid range [2, 11] — "
-                    f"treating as OCR error (raw: '{text}')"
-                )
-                if self.debug_screenshots:
-                    self._save_debug_screenshot(region, "dealer_total")
                 return None
-            logger.debug(f"Dealer upcard: {upcard}")
             return upcard
         except ValueError:
-            logger.warning(f"Could not convert dealer total: '{numeric}' (raw: '{text}')")
-            if self.debug_screenshots:
-                self._save_debug_screenshot(region, "dealer_total")
             return None
+
+    def _read_dealer_total(self) -> Optional[int]:
+        """
+        Read the dealer's upcard total via OCR.
+
+        Tries OCR with inversion first (dark-text-on-white), then falls back
+        to without inversion if the first attempt fails validation.
+
+        Returns:
+            Integer in [2, 11] (where 11 = Ace), or None if OCR failed.
+        """
+        region = self.get_region("dealer_total")
+        if not region:
+            return None
+
+        # Try with inversion first, then without
+        for invert in (True, False):
+            text = read_text(region, whitelist="0123456789", invert=invert)
+            result = self._parse_dealer_total(text)
+            if result is not None:
+                inv_label = "inverted" if invert else "non-inverted"
+                logger.debug(f"Dealer upcard: {result} ({inv_label}, raw: '{text}')")
+                self._save_ocr_snapshot(
+                    region, "dealer_total",
+                    ocr_text=text, parsed_value=result,
+                    success=True, invert=invert,
+                )
+                return result
+            if text:
+                inv_label = "inverted" if invert else "non-inverted"
+                logger.debug(
+                    f"Dealer total OCR attempt ({inv_label}) failed "
+                    f"validation: '{text}'"
+                )
+
+        logger.warning(
+            f"Could not read dealer total after trying both inversion modes "
+            f"(region: {region})"
+        )
+        self._save_ocr_snapshot(
+            region, "dealer_total", ocr_text="", success=False,
+        )
+        return None
 
     def _read_balance(self) -> Optional[float]:
         """Read current balance via OCR."""

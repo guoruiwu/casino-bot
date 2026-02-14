@@ -198,7 +198,13 @@ def find_all_elements(
     return results
 
 
-def read_text(region: dict, preprocess: str = "thresh", whitelist: str = "") -> str:
+def read_text(
+    region: dict,
+    preprocess: str = "thresh",
+    whitelist: str = "",
+    invert: bool = True,
+    border: int = 10,
+) -> str:
     """
     Read text from a screen region using OCR (Tesseract).
 
@@ -208,24 +214,24 @@ def read_text(region: dict, preprocess: str = "thresh", whitelist: str = "") -> 
                     backgrounds), "blur" for Gaussian blur, or "none".
         whitelist: If non-empty, restrict Tesseract to only these characters
                    (e.g. "0123456789/" for digit-only fields).
+        invert: If True (default), automatically invert the image when the
+                background is darker than the text so Tesseract always sees
+                dark text on a white background.
+        border: Whitespace padding in pixels added around the image before
+                sending to Tesseract.  Helps with character segmentation on
+                tightly-cropped regions.  Set to 0 to disable.
 
     Returns:
         Extracted text string, stripped of whitespace.
     """
+    from src.ocr_debug import preprocess_for_ocr
+
     screenshot = take_screenshot(region)
 
-    # Convert to grayscale
-    gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-
-    # Preprocessing to improve OCR accuracy
-    if preprocess == "thresh":
-        gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-    elif preprocess == "blur":
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-
-    # Scale up for better OCR accuracy on small text
-    scale = 2
-    gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    # Apply the shared preprocessing pipeline
+    gray = preprocess_for_ocr(
+        screenshot, preprocess=preprocess, invert=invert, border=border,
+    )
 
     # Run Tesseract OCR
     config = "--psm 7"
