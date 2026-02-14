@@ -30,6 +30,7 @@ from src.games.base_game import BaseGame
 from src.screen import (
     find_element,
     read_number,
+    read_text,
     take_screenshot,
 )
 
@@ -65,13 +66,32 @@ BASIC_STRATEGY: dict[int, dict[int, str]] = {
 }
 
 
-def get_action(player_total: int, dealer_upcard: int) -> str:
+# ── Basic Strategy (Soft Totals, Dealer Hits Soft 17) ────────────────────
+#
+# Soft hands: player has an Ace counted as 11.
+# Rows: player soft total (13-20, e.g. soft 13 = A+2)
+# Columns: dealer upcard (2-11, where 11 = Ace)
+
+SOFT_STRATEGY: dict[int, dict[int, str]] = {
+    13: {2: "H", 3: "H", 4: "H", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
+    14: {2: "H", 3: "H", 4: "H", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
+    15: {2: "H", 3: "H", 4: "D", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
+    16: {2: "H", 3: "H", 4: "D", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
+    17: {2: "H", 3: "D", 4: "D", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
+    18: {2: "D", 3: "D", 4: "D", 5: "D", 6: "D", 7: "S", 8: "S", 9: "H", 10: "H", 11: "H"},
+    19: {2: "S", 3: "S", 4: "S", 5: "S", 6: "D", 7: "S", 8: "S", 9: "S", 10: "S", 11: "S"},
+    20: {2: "S", 3: "S", 4: "S", 5: "S", 6: "S", 7: "S", 8: "S", 9: "S", 10: "S", 11: "S"},
+}
+
+
+def get_action(player_total: int, dealer_upcard: int, is_soft: bool = False) -> str:
     """
     Look up the basic strategy action for a given hand.
 
     Args:
         player_total: Player's hand total (4-21).
-        dealer_total: Dealer's visible card value (2-11, where 11 = Ace).
+        dealer_upcard: Dealer's visible card value (2-11, where 11 = Ace).
+        is_soft: True if the hand contains an Ace counted as 11 (soft hand).
 
     Returns:
         "hit", "stand", or "double".
@@ -79,6 +99,26 @@ def get_action(player_total: int, dealer_upcard: int) -> str:
     # Clamp inputs to valid ranges
     dealer_upcard = max(2, min(11, dealer_upcard))
 
+    # Soft 21 (e.g. A+10) — always stand
+    if is_soft and player_total >= 21:
+        return "stand"
+
+    # Soft hand: look up the soft strategy table
+    if is_soft:
+        row = SOFT_STRATEGY.get(player_total)
+        if row is not None:
+            code = row.get(dealer_upcard, "H")
+            if code == "H":
+                return "hit"
+            elif code == "S":
+                return "stand"
+            elif code == "D":
+                return "double"
+            else:
+                return "hit"
+        # Soft total not in table — fall through to hard strategy
+
+    # Hard hand strategy
     if player_total <= 4:
         return "hit"
     if player_total >= 17:
@@ -251,12 +291,14 @@ class InfiniteBlackjackGame(BaseGame):
         After clicking, the game loop will call detect_state() again.
         If we hit and need another decision, DECISION state will be detected again.
         """
-        # Read player total
-        player_total = self._read_player_total()
-        if player_total is None:
+        # Read player total (returns tuple of (total, is_soft) or None)
+        result = self._read_player_total()
+        if result is None:
             logger.warning("Could not read player total — defaulting to stand")
             self._click_stand()
             return
+
+        player_total, is_soft = result
 
         # Read dealer total
         dealer_total = self._read_dealer_total()
@@ -270,9 +312,10 @@ class InfiniteBlackjackGame(BaseGame):
             return
 
         # Look up basic strategy
-        action = get_action(player_total, dealer_total)
+        action = get_action(player_total, dealer_total, is_soft=is_soft)
+        soft_label = "soft " if is_soft else ""
         logger.info(
-            f"Player: {player_total}, Dealer: {dealer_total} → {action.upper()}"
+            f"Player: {soft_label}{player_total}, Dealer: {dealer_total} → {action.upper()}"
         )
 
         if action == "double":
@@ -326,18 +369,59 @@ class InfiniteBlackjackGame(BaseGame):
 
     # ── OCR Readers ──────────────────────────────────────────────────────
 
-    def _read_player_total(self) -> Optional[int]:
-        """Read the player's hand total via OCR."""
+    def _read_player_total(self) -> Optional[tuple[int, bool]]:
+        """
+        Read the player's hand total via OCR.
+
+        Handles soft hands where the display shows slash notation (e.g. "11/21"
+        meaning the hand is soft 21).
+
+        Returns:
+            Tuple of (total, is_soft), or None if OCR failed.
+            - total: the higher hand value (the one after the slash for soft hands)
+            - is_soft: True if the hand contains an Ace counted as 11
+        """
         region = self.get_region("player_total")
         if not region:
             return None
 
-        value = read_number(region)
-        if value is not None:
-            total = int(value)
-            logger.debug(f"Player total: {total}")
-            return total
-        return None
+        text = read_text(region)
+        if not text:
+            return None
+
+        # Clean up common OCR artifacts
+        cleaned = text.replace(" ", "").strip()
+
+        # Soft hand: slash notation like "11/21" or "3/13"
+        if "/" in cleaned:
+            parts = cleaned.split("/")
+            if len(parts) == 2:
+                try:
+                    low = int(parts[0])
+                    high = int(parts[1])
+                    total = max(low, high)
+                    logger.debug(f"Player total: {total} (soft, raw: '{text}')")
+                    return (total, True)
+                except ValueError:
+                    logger.warning(
+                        f"Could not parse soft total from OCR text: '{text}'"
+                    )
+                    return None
+
+        # Hard hand: plain number like "15"
+        # Keep only digits
+        numeric = "".join(ch for ch in cleaned if ch.isdigit())
+        if not numeric:
+            logger.warning(f"Could not parse player total from OCR text: '{text}'")
+            return None
+
+        try:
+            total = int(numeric)
+            logger.debug(f"Player total: {total} (hard, raw: '{text}')")
+            return (total, False)
+        except ValueError:
+            logger.warning(f"Could not convert player total: '{numeric}' (raw: '{text}')")
+            return None
 
     def _read_dealer_total(self) -> Optional[int]:
         """Read the dealer's total via OCR."""
