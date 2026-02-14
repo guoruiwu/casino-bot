@@ -72,10 +72,12 @@ BASIC_STRATEGY: dict[int, dict[int, str]] = {
 # ── Basic Strategy (Soft Totals, Dealer Hits Soft 17) ────────────────────
 #
 # Soft hands: player has an Ace counted as 11.
-# Rows: player soft total (13-20, e.g. soft 13 = A+2)
+# Rows: player soft total (12-20, e.g. soft 13 = A+2)
+#   - Soft 12 = A+A; normally a split, but we don't split, so always hit.
 # Columns: dealer upcard (2-11, where 11 = Ace)
 
 SOFT_STRATEGY: dict[int, dict[int, str]] = {
+    12: {2: "H", 3: "H", 4: "H", 5: "H", 6: "H", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
     13: {2: "H", 3: "H", 4: "H", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
     14: {2: "H", 3: "H", 4: "H", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
     15: {2: "H", 3: "H", 4: "D", 5: "D", 6: "D", 7: "H", 8: "H", 9: "H", 10: "H", 11: "H"},
@@ -517,6 +519,16 @@ class InfiniteBlackjackGame(BaseGame):
                     low = int(parts[0])
                     high = int(parts[1])
                     total = max(low, high)
+                    # Sanity: the two values should differ by exactly 10 (the
+                    # Ace spread) and the high value must be in [12, 21].
+                    if abs(high - low) != 10 or not (12 <= total <= 21):
+                        logger.warning(
+                            f"Soft total failed sanity check: "
+                            f"{low}/{high} (raw: '{text}')"
+                        )
+                        if self.debug_screenshots:
+                            self._save_debug_screenshot(region, "player_total")
+                        return None
                     logger.debug(f"Player total: {total} (soft, raw: '{text}')")
                     return (total, True)
                 except ValueError:
@@ -538,6 +550,16 @@ class InfiniteBlackjackGame(BaseGame):
 
         try:
             total = int(numeric)
+            # Sanity: a valid player hand total during decision is 4-21.
+            # (Minimum two-card hand is 2+2=4; above 21 is bust / not actionable.)
+            if not (4 <= total <= 21):
+                logger.warning(
+                    f"Player total {total} outside valid range [4, 21] — "
+                    f"treating as OCR error (raw: '{text}')"
+                )
+                if self.debug_screenshots:
+                    self._save_debug_screenshot(region, "player_total")
+                return None
             logger.debug(f"Player total: {total} (hard, raw: '{text}')")
             return (total, False)
         except ValueError:
@@ -573,9 +595,18 @@ class InfiniteBlackjackGame(BaseGame):
 
         try:
             upcard = int(numeric)
-            # Face cards (J/Q/K) are worth 10, Ace = 11
-            if upcard > 11:
-                upcard = 10
+            # Sanity: a valid dealer upcard is 2-11 (where 11 = Ace).
+            # Values 0 or 1 are impossible cards; values 12+ are likely OCR
+            # garbage (e.g. "4" read as "44"). Reject rather than silently
+            # clamping to avoid acting on wrong strategy lookups.
+            if not (2 <= upcard <= 11):
+                logger.warning(
+                    f"Dealer upcard {upcard} outside valid range [2, 11] — "
+                    f"treating as OCR error (raw: '{text}')"
+                )
+                if self.debug_screenshots:
+                    self._save_debug_screenshot(region, "dealer_total")
+                return None
             logger.debug(f"Dealer upcard: {upcard}")
             return upcard
         except ValueError:
