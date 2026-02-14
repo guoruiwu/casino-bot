@@ -144,6 +144,41 @@ def get_action(player_total: int, dealer_upcard: int, is_soft: bool = False) -> 
         return "hit"
 
 
+# Dealer upcard weights: 1/13 each for 2-9 and Ace, 4/13 for 10-value cards.
+_DEALER_UPCARD_WEIGHTS: dict[int, int] = {
+    2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 4, 11: 1,
+}
+
+
+def get_action_no_dealer(player_total: int, is_soft: bool = False) -> str:
+    """
+    Return the probability-weighted optimal action when the dealer upcard is
+    unknown.
+
+    For each possible dealer upcard (2-11), we look up basic strategy via
+    :func:`get_action`, weight by the upcard's probability, and pick the
+    action with the highest total weight. "Double" is counted as "hit"
+    because doubling may not be available in the fallback path.
+
+    Args:
+        player_total: Player's hand total (4-21).
+        is_soft: True if the hand contains an Ace counted as 11 (soft hand).
+
+    Returns:
+        "hit" or "stand".
+    """
+    votes: dict[str, int] = {"hit": 0, "stand": 0}
+
+    for upcard, weight in _DEALER_UPCARD_WEIGHTS.items():
+        action = get_action(player_total, upcard, is_soft=is_soft)
+        # Treat "double" as "hit" since double may not be available.
+        if action == "double":
+            action = "hit"
+        votes[action] = votes.get(action, 0) + weight
+
+    return "hit" if votes["hit"] >= votes["stand"] else "stand"
+
+
 class InfiniteBlackjackState(str, Enum):
     """Possible states for the Infinite Blackjack state machine."""
 
@@ -312,12 +347,13 @@ class InfiniteBlackjackGame(BaseGame):
         if dealer_total is None:
             region = self.get_region("dealer_total")
             soft_label = "soft " if is_soft else ""
+            action = get_action_no_dealer(player_total, is_soft)
             logger.warning(
-                f"Could not read dealer total — using conservative play "
+                f"Could not read dealer total — using probability-weighted "
+                f"strategy: {action.upper()} "
                 f"(player was {soft_label}{player_total}, region: {region})"
             )
-            # Conservative fallback: stand on 12+, hit on 11 or less
-            if player_total >= 12:
+            if action == "stand":
                 self._click_stand()
             else:
                 self._click_hit()
