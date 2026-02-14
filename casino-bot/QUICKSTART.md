@@ -24,7 +24,7 @@ Grant permissions to your terminal app:
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 tools/capture.py --game crazy_time_dk --type crazy_time
+python3 tools/capture.py --game crazy_time_dk
 ```
 
 4. It will ask for 2 things:
@@ -38,7 +38,7 @@ python3 tools/capture.py --game crazy_time_dk --type crazy_time
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 tools/capture.py --game GAME_NAME --type slot
+python3 tools/capture.py --game GAME_NAME
 ```
 
 3. It will ask you to capture the spin button (select corners)
@@ -50,7 +50,7 @@ python3 tools/capture.py --game GAME_NAME --type slot
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 tools/capture.py --game diamond_wild --type diamond_wild
+python3 tools/capture.py --game diamond_wild
 ```
 
 3. It will ask for 2 things:
@@ -163,7 +163,7 @@ If the game UI changed or your positions are wrong:
 
 ```bash
 cd /Users/guoruiwu/Github/casino-bot
-python3 tools/capture.py --game crazy_time_dk --reset --type crazy_time
+python3 tools/capture.py --game crazy_time_dk --reset
 ```
 
 This deletes the old screenshots and config, then walks you through capturing again.
@@ -180,14 +180,14 @@ python3 tools/capture.py --game crazy_time_dk --reset
 
 | What | Command |
 |------|---------|
-| Set up Crazy Time | `python3 tools/capture.py --game crazy_time_dk --type crazy_time` |
-| Set up a slot | `python3 tools/capture.py --game GAME_NAME --type slot` |
-| Set up Diamond Wild | `python3 tools/capture.py --game diamond_wild --type diamond_wild` |
+| Set up Crazy Time | `python3 tools/capture.py --game crazy_time_dk` |
+| Set up a slot | `python3 tools/capture.py --game GAME_NAME` |
+| Set up Diamond Wild | `python3 tools/capture.py --game diamond_wild` |
 | Update one asset | `python3 tools/capture.py --game GAME_NAME --update-asset ELEMENT` |
 | Set up reality check | `python3 tools/capture.py --game GAME_NAME --update-asset reality_check` |
 | Run Crazy Time 60 min | `python3 main.py --config config/games/crazy_time_dk.yaml --duration 60` |
 | Run a slot 60 min | `python3 main.py --config config/games/GAME_NAME.yaml --duration 60` |
 | Run Diamond Wild 60 min | `python3 main.py --config config/games/diamond_wild.yaml --duration 60` |
 | Test assets on screen | `python3 tools/capture.py --game GAME_NAME --test` |
-| Reset & re-capture | `python3 tools/capture.py --game GAME_NAME --reset --type crazy_time` |
+| Reset & re-capture | `python3 tools/capture.py --game GAME_NAME --reset` |
 | Stop | Ctrl+C |

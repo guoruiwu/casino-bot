@@ -1,0 +1,17 @@
+game:
+  name: 'Infinite Blackjack '
+  platform: fanduel
+  asset_dir: assets/infinite_blackjack_/
+elements:
+  betting_open: betting_open.png
+regions: {}
+bet_spot:
+  x: 0
+  y: 0
+settings:
+  confidence: 0.8
+  action_delay:
+  - 0.2
+  - 0.5
+  poll_interval: 1.0
+  session_duration: 60

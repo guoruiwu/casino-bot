@@ -1,6 +1,5 @@
 game:
   name: Crazy Time Dk
-  type: crazy_time
   platform: draftkings
   asset_dir: assets/crazy_time_dk/
 elements:

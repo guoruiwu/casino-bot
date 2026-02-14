@@ -2,7 +2,7 @@
 Abstract base class for all game runners.
 
 Provides config loading, session timer, logging, error handling, and the main game loop
-structure. Each game type (slots, crazy_time, etc.) subclasses this and implements
+structure. Each game (slots, crazy_time, etc.) subclasses this and implements
 detect_state() and step().
 """
 
@@ -62,7 +62,6 @@ class BaseGame(ABC):
 
         game_cfg = self.config.get("game", {})
         self.game_name = game_cfg.get("name", "Unknown Game")
-        self.game_type = game_cfg.get("type", "unknown")
         self.platform = game_cfg.get("platform", "unknown")
 
         # Resolve asset directory relative to project root
@@ -90,7 +89,7 @@ class BaseGame(ABC):
         self.confidence = self.settings.get("confidence", 0.85)
         self.action_delay = tuple(self.settings.get("action_delay", [0.3, 1.0]))
 
-        logger.info(f"Loaded config: {self.game_name} ({self.game_type})")
+        logger.info(f"Loaded config: {self.game_name}")
         logger.info(f"Asset dir: {self.asset_dir}")
         logger.info(f"Session duration: {self.session_duration} minutes")
 
@@ -240,7 +239,7 @@ class BaseGame(ABC):
 
         Returns:
             A string representing the current state (e.g. "idle", "spinning",
-            "bonus_pick", etc.). State names are game-type specific.
+            "bonus_pick", etc.). State names are game-specific.
         """
         ...
 

@@ -7,18 +7,17 @@
 # Quick setup for a new slot:
 #   1. cp config/games/slot_template.yaml config/games/MY_SLOT.yaml
 #   2. Open the slot in Chrome
-#   3. Run: python3 tools/capture.py --game MY_SLOT --type slot
+#   3. Run: python3 tools/capture.py --game MY_SLOT
 #   4. Update this file with the correct element filenames and regions
 #   5. Test: python3 tools/capture.py --game MY_SLOT --test
 #   6. Run: python3 main.py --config config/games/MY_SLOT.yaml --duration 60
 #
 # Or let the capture tool generate the YAML for you:
-#   python3 tools/capture.py --game MY_SLOT --type slot
+#   python3 tools/capture.py --game MY_SLOT
 # ─────────────────────────────────────────────────────────────
 
 game:
   name: "Slot Name - Platform"            # e.g. "Starburst - DraftKings"
-  type: slot
   platform: draftkings                    # "draftkings" or "fanduel"
   asset_dir: "assets/MY_SLOT/"            # Path to captured screenshots
 
@@ -54,7 +53,7 @@ elements:
   # pick_target: "pick_item.png"          # What clickable items look like
   # pick_collect: "collect.png"           # "Collect" / end-of-bonus indicator
 
-  # Common — works on all game types (capture with: --update-asset reality_check)
+  # Common — works on all games (capture with: --update-asset reality_check)
   # reality_check: "reality_check.png"    # Reality check popup dismiss button
 
 # OCR regions — screen coordinates for reading text

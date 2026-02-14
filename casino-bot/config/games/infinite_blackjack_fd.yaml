@@ -1,6 +1,5 @@
 game:
   name: Infinite Blackjack FD
-  type: infinite_blackjack
   platform: fanduel
   asset_dir: assets/infinite_blackjack_fd/
 

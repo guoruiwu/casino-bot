@@ -3,16 +3,16 @@
 Asset capture tool for setting up new games.
 
 Usage:
-  # Interactive mode (arrow-key menus to select game type and assets)
+  # Interactive mode (arrow-key menus to select game and assets)
   python3 tools/capture.py
 
-  # See what assets are needed for a game type
+  # See what assets are needed for a game
   python3 tools/capture.py --help-game infinite_blackjack
 
-  # Capture all assets for a new game (type auto-detected from name)
+  # Capture all assets for a new game (auto-detected from name)
   python3 tools/capture.py --game infinite_blackjack_fd
   python3 tools/capture.py --game crazy_time_dk
-  python3 tools/capture.py --game my_slot_dk --type slot
+  python3 tools/capture.py --game my_slot_dk
 
   # Re-capture assets interactively (arrow-key picker)
   python3 tools/capture.py --game diamond_wild --update-asset
@@ -55,12 +55,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.screen import find_element, init_retina_scale, take_screenshot
 
-# ── Common optional elements (shared across all game types) ──────────────
+# ── Common optional elements (shared across all games) ───────────────────
 COMMON_OPTIONAL_ELEMENTS = [
     ("reality_check", "Reality check popup button (the button to dismiss the popup)"),
 ]
 
-# ── Element definitions per game type ────────────────────────────────────
+# ── Element definitions per game ─────────────────────────────────────────
 # Only the ESSENTIAL elements that must be image-matched.
 # Everything else (bet positions, regions) uses coordinates in the YAML.
 
@@ -131,10 +131,10 @@ INFINITE_BLACKJACK_POSITIONS = [
     ("bet_spot", "Main betting area on the table (where to place chip)"),
 ]
 
-# ── Game type registry ───────────────────────────────────────────────────
-# Maps game type to its element, optional element, region, and position lists.
+# ── Game registry ────────────────────────────────────────────────────────
+# Maps game to its element, optional element, region, and position lists.
 
-GAME_TYPE_DEFS = {
+GAME_DEFS = {
     "slot": {
         "elements": SLOT_ELEMENTS,
         "optional_elements": SLOT_OPTIONAL_ELEMENTS,
@@ -161,33 +161,33 @@ GAME_TYPE_DEFS = {
     },
 }
 
-KNOWN_GAME_TYPES = list(GAME_TYPE_DEFS.keys())
+KNOWN_GAMES = list(GAME_DEFS.keys())
 
 
-def detect_game_type(game_name: str) -> str | None:
+def detect_game(game_name: str) -> str | None:
     """
-    Auto-detect game type from game name by matching against known types.
+    Auto-detect game from game name by matching against known games.
 
-    Checks if the game name starts with a known type. Uses longest match
+    Checks if the game name starts with a known game. Uses longest match
     to avoid ambiguity (e.g. 'diamond_wild' before 'diamond').
 
     Returns:
-        Matched game type string, or None if no match found.
+        Matched game string, or None if no match found.
     """
-    # Sort by length descending so longer types match first
-    sorted_types = sorted(KNOWN_GAME_TYPES, key=len, reverse=True)
-    for game_type in sorted_types:
-        if game_name == game_type or game_name.startswith(game_type + "_"):
-            return game_type
+    # Sort by length descending so longer names match first
+    sorted_games = sorted(KNOWN_GAMES, key=len, reverse=True)
+    for game in sorted_games:
+        if game_name == game or game_name.startswith(game + "_"):
+            return game
     return None
 
 
-def print_game_help(game_type: str) -> None:
-    """Print a full checklist of assets needed for a game type."""
-    defs = GAME_TYPE_DEFS.get(game_type)
+def print_game_help(game: str) -> None:
+    """Print a full checklist of assets needed for a game."""
+    defs = GAME_DEFS.get(game)
     if defs is None:
-        print(f"\n  Unknown game type: '{game_type}'")
-        print(f"  Available types: {', '.join(KNOWN_GAME_TYPES)}\n")
+        print(f"\n  Unknown game: '{game}'")
+        print(f"  Available games: {', '.join(KNOWN_GAMES)}\n")
         sys.exit(1)
 
     elements = defs["elements"]
@@ -201,7 +201,7 @@ def print_game_help(game_type: str) -> None:
     n_regions = len(regions)
     n_positions = len(positions)
 
-    print(f"\n  Assets needed for: {game_type}")
+    print(f"\n  Assets needed for: {game}")
     print(f"  {'=' * 40}")
 
     if elements or optional_elements or COMMON_OPTIONAL_ELEMENTS:
@@ -303,15 +303,15 @@ def capture_position(prompt: str) -> tuple[int, int]:
     return (pos.x, pos.y)
 
 
-def capture_elements(game_name: str, game_type: str) -> dict:
+def capture_elements(game_name: str, game: str) -> dict:
     """Walk through capturing elements for a game — only the essentials."""
     asset_dir = PROJECT_ROOT / "assets" / game_name
     asset_dir.mkdir(parents=True, exist_ok=True)
 
-    defs = GAME_TYPE_DEFS.get(game_type)
+    defs = GAME_DEFS.get(game)
     if defs is None:
-        print(f"Unknown game type: {game_type}")
-        print(f"Available types: {', '.join(KNOWN_GAME_TYPES)}")
+        print(f"Unknown game: {game}")
+        print(f"Available games: {', '.join(KNOWN_GAMES)}")
         sys.exit(1)
 
     required_elements = defs["elements"]
@@ -324,7 +324,7 @@ def capture_elements(game_name: str, game_type: str) -> dict:
     captured_positions = {}
 
     print(f"\n{'='*60}")
-    print(f"  Capturing assets for: {game_name} ({game_type})")
+    print(f"  Capturing assets for: {game_name}")
     print(f"  Asset directory: {asset_dir}")
     print(f"{'='*60}")
     print()
@@ -410,7 +410,7 @@ def capture_elements(game_name: str, game_type: str) -> dict:
     }
 
 
-def generate_yaml_config(game_name: str, game_type: str, captured: dict) -> str:
+def generate_yaml_config(game_name: str, game: str, captured: dict) -> str:
     """Generate a YAML config file from captured data."""
     config_dir = PROJECT_ROOT / "config" / "games"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -423,7 +423,7 @@ def generate_yaml_config(game_name: str, game_type: str, captured: dict) -> str:
         "infinite_blackjack": _generate_infinite_blackjack_config,
     }
 
-    generator = config_generators.get(game_type)
+    generator = config_generators.get(game)
     if generator:
         config = generator(game_name, captured)
     else:
@@ -441,7 +441,6 @@ def _generate_slot_config(game_name: str, captured: dict) -> dict:
     return {
         "game": {
             "name": game_name.replace("_", " ").title(),
-            "type": "slot",
             "platform": "draftkings",
             "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
         },
@@ -479,7 +478,6 @@ def _generate_crazy_time_config(game_name: str, captured: dict) -> dict:
     return {
         "game": {
             "name": game_name.replace("_", " ").title(),
-            "type": "crazy_time",
             "platform": "draftkings",
             "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
         },
@@ -500,7 +498,6 @@ def _generate_diamond_wild_config(game_name: str, captured: dict) -> dict:
     return {
         "game": {
             "name": game_name.replace("_", " ").title(),
-            "type": "diamond_wild",
             "platform": "draftkings",
             "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
         },
@@ -527,7 +524,6 @@ def _generate_infinite_blackjack_config(game_name: str, captured: dict) -> dict:
     return {
         "game": {
             "name": game_name.replace("_", " ").title(),
-            "type": "infinite_blackjack",
             "platform": "fanduel",
             "asset_dir": captured.get("asset_dir", f"assets/{game_name}/"),
         },
@@ -550,7 +546,7 @@ def update_single_asset(game_name: str, element_name: str) -> None:
 
     if not config_path.exists():
         print(f"Config not found: {config_path}")
-        print(f"Run a full capture first: python3 tools/capture.py --game {game_name} --type <type>")
+        print(f"Run a full capture first: python3 tools/capture.py --game {game_name}")
         sys.exit(1)
 
     asset_dir.mkdir(parents=True, exist_ok=True)
@@ -656,14 +652,11 @@ def test_assets(game_name: str) -> None:
     print(f"\n  Result: {found}/{total} elements found on screen")
 
 
-def _resolve_game_type(args) -> str | None:
-    """Resolve game type from --type flag or auto-detect from game name."""
-    if args.type:
-        return args.type
-
-    detected = detect_game_type(args.game)
+def _resolve_game(game_name: str) -> str | None:
+    """Auto-detect game from game name."""
+    detected = detect_game(game_name)
     if detected:
-        print(f"  Auto-detected game type: {detected}")
+        print(f"  Auto-detected game: {detected}")
         return detected
 
     return None
@@ -681,7 +674,7 @@ def interactive_select_game() -> str:
     """Arrow-key menu to select a game. First step — no back option."""
     choices = [
         {"name": gt, "value": gt}
-        for gt in KNOWN_GAME_TYPES
+        for gt in KNOWN_GAMES
     ]
     return inquirer.select(
         message="Select game:",
@@ -690,24 +683,24 @@ def interactive_select_game() -> str:
     ).execute()
 
 
-def interactive_enter_game_name(game_type: str, default: str = "") -> str:
-    """Prompt to customize the game name, with the game type pre-filled."""
+def interactive_enter_game_name(game: str, default: str = "") -> str:
+    """Prompt to customize the game name, with the game pre-filled."""
     return inquirer.text(
         message="Game name:",
-        default=default or f"{game_type}_",
+        default=default or f"{game}_",
         validate=lambda val: len(val.strip()) > 0,
         invalid_message="Game name cannot be empty.",
     ).execute().strip()
 
 
-def interactive_select_assets(game_type: str) -> list[tuple[str, str]]:
+def interactive_select_assets(game: str) -> list[tuple[str, str]]:
     """
     Arrow-key checkbox to select which assets to capture.
 
     Returns a list of (category, name) tuples where category is one of:
     'element', 'region', 'position'.
     """
-    defs = GAME_TYPE_DEFS[game_type]
+    defs = GAME_DEFS[game]
     choices = []
 
     # Required elements — pre-checked
@@ -776,10 +769,10 @@ def interactive_select_update_assets(game_name: str) -> list[str]:
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    game_type = config.get("game", {}).get("type")
-    defs = GAME_TYPE_DEFS.get(game_type, {})
+    game = detect_game(game_name)
+    defs = GAME_DEFS.get(game, {})
 
-    # Build a lookup of all known asset descriptions for this game type
+    # Build a lookup of all known asset descriptions for this game
     desc_map = {}
     for name, desc, *_ in defs.get("elements", []):
         desc_map[name] = desc
@@ -800,7 +793,7 @@ def interactive_select_update_assets(game_name: str) -> list[str]:
         label = f"{elem_name} — {desc}" if desc else elem_name
         choices.append({"name": label, "value": elem_name})
 
-    # Also offer assets that exist for this game type but aren't captured yet
+    # Also offer assets that exist for this game but aren't captured yet
     all_possible = set(desc_map.keys())
     uncaptured = all_possible - set(elements.keys())
     if uncaptured:
@@ -823,7 +816,7 @@ def interactive_select_update_assets(game_name: str) -> list[str]:
 
 def capture_selected_elements(
     game_name: str,
-    game_type: str,
+    game: str,
     selected_assets: list[tuple[str, str]],
 ) -> dict:
     """
@@ -831,7 +824,7 @@ def capture_selected_elements(
 
     Args:
         game_name: Name for the game (used for directory naming).
-        game_type: Game type key from GAME_TYPE_DEFS.
+        game: Game key from GAME_DEFS.
         selected_assets: List of (category, name) tuples from the interactive picker.
 
     Returns:
@@ -840,7 +833,7 @@ def capture_selected_elements(
     asset_dir = PROJECT_ROOT / "assets" / game_name
     asset_dir.mkdir(parents=True, exist_ok=True)
 
-    defs = GAME_TYPE_DEFS[game_type]
+    defs = GAME_DEFS[game]
 
     # Build lookup maps for descriptions
     elem_desc = {}
@@ -864,7 +857,7 @@ def capture_selected_elements(
     sel_positions = [name for cat, name in selected_assets if cat == "position"]
 
     print(f"\n{'='*60}")
-    print(f"  Capturing assets for: {game_name} ({game_type})")
+    print(f"  Capturing assets for: {game_name}")
     print(f"  Asset directory: {asset_dir}")
     print(f"{'='*60}")
     print()
@@ -935,17 +928,17 @@ def interactive_new_game() -> None:
 
     Steps:
       1. Select game (arrow-key list)
-      2. Enter game name (text, pre-filled with game type prefix)
+      2. Enter game name (text, pre-filled with game prefix)
       3. Select assets to capture (checkbox)
       4. Capture and generate config
     """
-    game_type = interactive_select_game()
-    game_name = interactive_enter_game_name(game_type)
-    selected_assets = interactive_select_assets(game_type)
+    game = interactive_select_game()
+    game_name = interactive_enter_game_name(game)
+    selected_assets = interactive_select_assets(game)
 
     init_retina_scale()
-    captured = capture_selected_elements(game_name, game_type, selected_assets)
-    config_path = generate_yaml_config(game_name, game_type, captured)
+    captured = capture_selected_elements(game_name, game, selected_assets)
+    config_path = generate_yaml_config(game_name, game, captured)
 
     print(f"\n{'='*60}")
     print(f"  Done! Next steps:")
@@ -973,11 +966,6 @@ def main():
         "--game", help="Game name (used for directory and config naming)"
     )
     parser.add_argument(
-        "--type",
-        choices=KNOWN_GAME_TYPES,
-        help="Game type (auto-detected from game name if omitted)",
-    )
-    parser.add_argument(
         "--test",
         action="store_true",
         help="Test mode: verify all assets can be found on screen",
@@ -997,8 +985,8 @@ def main():
     )
     parser.add_argument(
         "--help-game",
-        metavar="TYPE",
-        help="Print a checklist of all assets needed for a game type",
+        metavar="GAME",
+        help="Print a checklist of all assets needed for a game",
     )
 
     args = parser.parse_args()
@@ -1021,14 +1009,14 @@ def main():
         else:
             update_single_asset(args.game, args.update_asset)
     elif args.reset:
-        game_type = _resolve_game_type(args)
+        game = _resolve_game(args.game)
         reset_game(args.game)
-        if not game_type:
-            print(f"  Add --type <type> to re-capture now.")
-            print(f"  Available types: {', '.join(KNOWN_GAME_TYPES)}")
-            sys.exit(0)
-        captured = capture_elements(args.game, game_type)
-        config_path = generate_yaml_config(args.game, game_type, captured)
+        if not game:
+            print(f"Error: Could not detect game from '{args.game}'.")
+            print(f"  Available games: {', '.join(KNOWN_GAMES)}")
+            sys.exit(1)
+        captured = capture_elements(args.game, game)
+        config_path = generate_yaml_config(args.game, game, captured)
         print(f"\n{'='*60}")
         print(f"  Re-captured! Config: {config_path}")
         print(f"  Run: python3 main.py --config {config_path} --duration 60")
@@ -1036,15 +1024,14 @@ def main():
     elif args.test:
         test_assets(args.game)
     else:
-        game_type = _resolve_game_type(args)
-        if not game_type:
-            print(f"Error: Could not auto-detect game type from '{args.game}'.")
-            print(f"  Use --type <type> to specify it explicitly.")
-            print(f"  Available types: {', '.join(KNOWN_GAME_TYPES)}")
+        game = _resolve_game(args.game)
+        if not game:
+            print(f"Error: Could not detect game from '{args.game}'.")
+            print(f"  Available games: {', '.join(KNOWN_GAMES)}")
             sys.exit(1)
 
-        captured = capture_elements(args.game, game_type)
-        config_path = generate_yaml_config(args.game, game_type, captured)
+        captured = capture_elements(args.game, game)
+        config_path = generate_yaml_config(args.game, game, captured)
 
         print(f"\n{'='*60}")
         print(f"  Done! Next steps:")

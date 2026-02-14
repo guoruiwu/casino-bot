@@ -1,6 +1,5 @@
 game:
   name: Diamond Wild
-  type: diamond_wild
   platform: draftkings
   asset_dir: assets/diamond_wild/
 elements:

@@ -17,11 +17,9 @@ from pathlib import Path
 # Ensure project root is on the Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-import yaml
-
 from src.screen import init_retina_scale
 
-# Game runner registry — maps game type to runner class
+# Game runner registry — maps game to runner class
 GAME_RUNNERS = {
     "slot": "src.games.slots.SlotsGame",
     "crazy_time": "src.games.crazy_time.CrazyTimeGame",
@@ -53,25 +51,25 @@ def setup_logging(verbose: bool = False) -> None:
     logging.getLogger("pytesseract").setLevel(logging.WARNING)
 
 
-def load_game_type(config_path: str) -> str:
-    """Read just the game type from a config file."""
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+def detect_game(config_path: str) -> str:
+    """Detect the game from the config filename using prefix matching."""
+    stem = Path(config_path).stem
+    known_games = sorted(GAME_RUNNERS.keys(), key=len, reverse=True)
+    for game in known_games:
+        if stem == game or stem.startswith(game + "_"):
+            return game
 
-    game_type = config.get("game", {}).get("type")
-    if not game_type:
-        print(f"Error: Config file missing game.type field: {config_path}")
-        sys.exit(1)
-
-    return game_type
+    print(f"Error: Could not detect game from config filename '{stem}'")
+    print(f"Supported games: {', '.join(GAME_RUNNERS.keys())}")
+    sys.exit(1)
 
 
-def get_runner_class(game_type: str):
-    """Import and return the game runner class for a given game type."""
-    class_path = GAME_RUNNERS.get(game_type)
+def get_runner_class(game: str):
+    """Import and return the game runner class for a given game."""
+    class_path = GAME_RUNNERS.get(game)
     if not class_path:
-        print(f"Error: Unknown game type '{game_type}'")
-        print(f"Supported types: {', '.join(GAME_RUNNERS.keys())}")
+        print(f"Error: Unknown game '{game}'")
+        print(f"Supported games: {', '.join(GAME_RUNNERS.keys())}")
         sys.exit(1)
 
     # Dynamic import
@@ -126,11 +124,11 @@ Examples:
     # Initialize Retina scale detection
     init_retina_scale()
 
-    # Load game type and get runner
-    game_type = load_game_type(str(config_path))
-    logger.info(f"Game type: {game_type}")
+    # Detect game and get runner
+    game = detect_game(str(config_path))
+    logger.info(f"Game: {game}")
 
-    RunnerClass = get_runner_class(game_type)
+    RunnerClass = get_runner_class(game)
     runner = RunnerClass(config_path)
 
     # Run the game

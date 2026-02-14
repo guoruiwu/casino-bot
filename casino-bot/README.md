@@ -40,13 +40,13 @@ Open the game in Chrome, then run:
 
 ```bash
 # For a slot game
-python3 tools/capture.py --game my_slot_dk --type slot
+python3 tools/capture.py --game my_slot_dk
 
 # For Crazy Time Live
-python3 tools/capture.py --game crazy_time_dk --type crazy_time
+python3 tools/capture.py --game crazy_time_dk
 
 # For Diamond Wild
-python3 tools/capture.py --game diamond_wild --type diamond_wild
+python3 tools/capture.py --game diamond_wild
 ```
 
 The tool walks you through screenshotting each UI element (spin button, bet controls, bonus indicators, etc.) and generates a starter YAML config.
@@ -110,13 +110,13 @@ pip3 install -r requirements.txt
 # 2. Grant macOS permissions (Accessibility + Screen Recording)
 
 # 3. Re-capture assets for each game you want to run
-python3 tools/capture.py --game crazy_time_dk --type crazy_time
+python3 tools/capture.py --game crazy_time_dk
 ```
 
 To reset and re-capture an existing game (e.g. if the UI changed):
 
 ```bash
-python3 tools/capture.py --game crazy_time_dk --reset --type crazy_time
+python3 tools/capture.py --game crazy_time_dk --reset
 ```
 
 ## Weekly Update Workflow
@@ -124,7 +124,7 @@ python3 tools/capture.py --game crazy_time_dk --reset --type crazy_time
 When a new leaderboard game drops:
 
 1. Open the game in Chrome
-2. `python3 tools/capture.py --game <name> --type slot`
+2. `python3 tools/capture.py --game <name>`
 3. Screenshot each UI element (tool walks you through it)
 4. Edit the generated YAML config if needed (bet amount, regions, thresholds)
 5. `python3 main.py --config config/games/<name>.yaml --duration 60`
